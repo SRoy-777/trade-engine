@@ -20,7 +20,7 @@ from providers.market.dhan.models import MarketPacket
 async def run_backtest():
     print("==================================================")
     # 1. Setup Data Source
-    csv_path = backend_dir.parent / "market_data" / "tatamotors_data.csv"
+    csv_path = backend_dir.parent / "market_data" / "sbin_data.csv"
     if not csv_path.exists():
         print(f"Error: Historical CSV file not found at {csv_path}")
         return
@@ -28,22 +28,26 @@ async def run_backtest():
     print(f"Loading historical data from: {csv_path.name}")
     csv_source = CSVReplaySource(str(csv_path))
     
-    # 2. Setup Paper Broker (50 Lakh INR initial balance, 50ms matching latency)
-    broker = PaperBroker(initial_cash_inr=5000000.0, latency_ms=50.0)
+    # 2. Setup Paper Broker (₹60,000 initial balance, 50ms matching latency)
+    broker = PaperBroker(initial_cash_inr=60000.0, latency_ms=50.0)
     risk = RiskController(
-        max_capital_per_trade_inr=30000000.0, # ₹3 Crore limit
-        max_daily_loss_inr=50000.0,
-        margin_leverage_multiplier=5.0
+        max_capital_per_trade_inr=300000.0, # ₹3 Lakh limit (covering 2.6 Lakh trade)
+        max_daily_loss_inr=10000.0,
+        margin_leverage_multiplier=5.0     # 5x leverage
     )
     manager = StrategyManager(broker, risk)
     
-    # 3. Choose and Register Strategy (HFT Micro Scalper)
+    # 3. Register Strategy (HFT Scalper)
+    # Target profit: ₹300.0
+    # Ticks target: 24 (24 * 0.05 = ₹1.20 price change. Position size = 300 / 1.20 = 250 shares)
+    # Stop loss: 48 ticks (48 * 0.05 = ₹2.40 price change. Stop Loss value = 250 * 2.40 = ₹600)
     strategy = HftMicroScalper(
-        strategy_id="backtest_scalp_01",
-        name="HFT Scalper Backtest (TATAMOTORS)",
-        symbols=["TATAMOTORS"],
-        target_profit_inr=1000.0,
-        ticks_target=2
+        strategy_id="backtest_scalp_sbin",
+        name="HFT Scalper (SBIN)",
+        symbols=["SBIN"],
+        target_profit_inr=300.0,
+        ticks_target=24,
+        capital_limit=60000.0
     )
     manager.register_strategy(strategy)
 
@@ -60,7 +64,7 @@ async def run_backtest():
         packet = MarketPacket(
             packet_type="Ticker",
             exchange_segment="NSE_EQ",
-            security_id=row.get("symbol", "TATAMOTORS"),
+            security_id=row.get("symbol", "SBIN"),
             ltp=float(row.get("ltp", 0.0)),
             volume=int(row.get("volume", 0)) if row.get("volume") else None,
             timestamp=datetime.strptime(row.get("timestamp"), "%Y-%m-%dT%H:%M:%S.%fZ") if "timestamp" in row and row.get("timestamp") else datetime.utcnow()
@@ -68,7 +72,7 @@ async def run_backtest():
         
         await manager.on_tick(packet)
         packet_count += 1
-        # Brief yield to event loop to process async latency order fills
+        # Brief yield to event loop to process async order fills
         await asyncio.sleep(0.01)
 
     await csv_source.close()
