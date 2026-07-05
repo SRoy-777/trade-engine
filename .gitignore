@@ -34,3 +34,8 @@ dist-ssr/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Large data directories
+data/
+market_data/
+

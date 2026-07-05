@@ -7,8 +7,9 @@ class OrbConfig(BaseSettings):
     ORB_END: str = Field(default="09:30")
     VOLUME_LOOKBACK: int = Field(default=20)
     MIN_VOLUME_MULTIPLIER: float = Field(default=1.5)
-    RISK_REWARD: float = Field(default=2.0)
+    RISK_REWARD: float = Field(default=1.5)
     MAX_TRADES_PER_DAY: int = Field(default=1)
+    LAST_ENTRY_TIME: str = Field(default="14:30")
     SQUARE_OFF_TIME: str = Field(default="15:10")
 
     model_config = SettingsConfigDict(

@@ -18,13 +18,19 @@ class TimeFilter(BaseFilter):
         time_str = event_time.strftime("%H:%M")
         
         orb_end = context.get("orb_end", "09:30")
-        square_off = context.get("square_off", "15:10")
+        last_entry = context.get("last_entry", "14:30")
         
-        # Must be strictly after ORB_END and before SQUARE_OFF_TIME
+        # Robustly handle cases where context parameters are datetime.time or datetime.datetime objects
+        if not isinstance(orb_end, str):
+            orb_end = getattr(orb_end, "strftime", lambda f: str(orb_end))("%H:%M")
+        if not isinstance(last_entry, str):
+            last_entry = getattr(last_entry, "strftime", lambda f: str(last_entry))("%H:%M")
+            
+        # Must be strictly after ORB_END and before LAST_ENTRY_TIME
         is_after_range = time_str > orb_end
-        is_before_exit = time_str < square_off
+        is_before_cutoff = time_str < last_entry
         
-        return is_after_range and is_before_exit
+        return is_after_range and is_before_cutoff
 
 class VolumeFilter(BaseFilter):
     """Validates that current tick volume exhibits a significant breakout surge."""

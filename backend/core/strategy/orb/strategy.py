@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, time
+from datetime import datetime, time, date
 from typing import List, Dict, Any, Optional, Callable
 from models.market import MarketEvent
 from core.strategy.orb.config import orb_config
@@ -28,7 +28,7 @@ class OpeningRangeBreakoutStrategy:
         self.signal_callback = signal_callback
         
         # Daily state tracking variables
-        self.current_date: Optional[datetime.date] = None
+        self.current_date: Optional[date] = None
         self.opening_high = 0.0
         self.opening_low = float("inf")
         self.opening_range = 0.0
@@ -82,16 +82,17 @@ class OpeningRangeBreakoutStrategy:
                 )
 
             # 4. Check for Entry Breakout Triggers
+            min_range = self.opening_low * 0.005
             if (
                 self.daily_trades_taken < self.config.MAX_TRADES_PER_DAY
                 and not self.active_position
-                and self.opening_range > 0.0
+                and self.opening_range >= min_range
             ):
                 # Evaluate filters
                 avg_volume = sum(self.volume_history) / len(self.volume_history) if self.volume_history else 0.0
                 context = {
                     "orb_end": self.config.ORB_END,
-                    "square_off": self.config.SQUARE_OFF_TIME,
+                    "last_entry": self.config.LAST_ENTRY_TIME,
                     "avg_volume": avg_volume,
                     "min_volume_multiplier": self.config.MIN_VOLUME_MULTIPLIER
                 }
@@ -144,6 +145,14 @@ class OpeningRangeBreakoutStrategy:
                 # Update Excursions (MFE/MAE)
                 self.active_position["mfe"] = max(self.active_position["mfe"], event.ltp)
                 self.active_position["mae"] = min(self.active_position["mae"], event.ltp)
+                
+                # Break-Even SL trailing
+                if event.ltp >= self.active_position["entry_price"] + self.opening_range:
+                    if self.active_position["stop_loss"] < self.active_position["entry_price"]:
+                        self.active_position["stop_loss"] = self.active_position["entry_price"]
+                        dhan_logger.info(
+                            f"[ORB Strategy] Profit reached 1.0x range. Trailing Stop Loss to break-even at Rs.{self.active_position['entry_price']:.2f}"
+                        )
                 
                 # Exit Triggers
                 is_target_hit = event.ltp >= self.active_position["target"]
