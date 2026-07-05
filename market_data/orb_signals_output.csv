@@ -1,0 +1,4 @@
+signal_id,timestamp,symbol,entry_price,stop_loss,target,reason,risk_reward
+e2102f2b-d947-4341-b2ae-c8c81e62d21f,2026-07-06T09:40:00,SBIN,1046.0,1040.0,1056.0,Opening Range Breakout,2.0
+ea077523-d09d-4b59-ae4f-8c9b13878af6,2026-07-07T09:35:00,SBIN,1045.0,1042.0,1049.0,Opening Range Breakout,2.0
+aa60f00d-91f4-4146-8e66-3d8a4f36a506,2026-07-08T09:35:00,SBIN,1041.0,1038.0,1045.0,Opening Range Breakout,2.0

@@ -105,6 +105,25 @@ async def run_orb_backtest():
     assert summary['wins'] == 2, f"Expected 2 wins (Day 1 Target, Day 3 Square Off points positive), got: {summary['wins']}"
     assert summary['losses'] == 1, f"Expected 1 loss (Day 2 SL), got: {summary['losses']}"
     
+    # 5. Export results to CSV files
+    import csv
+    
+    signals_csv_path = backend_dir.parent / "market_data" / "orb_signals_output.csv"
+    with open(signals_csv_path, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["signal_id", "timestamp", "symbol", "entry_price", "stop_loss", "target", "reason", "risk_reward"])
+        for s in signals:
+            writer.writerow([s.signal_id, s.timestamp.isoformat(), s.symbol, s.entry_price, s.stop_loss, s.target, s.reason, s.risk_reward])
+            
+    trades_csv_path = backend_dir.parent / "market_data" / "orb_trades_output.csv"
+    with open(trades_csv_path, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["symbol", "entry_time", "exit_time", "entry_price", "exit_price", "holding_time_secs", "pnl", "mfe", "mae", "exit_reason"])
+        for r in strategy.analytics.get_all_records():
+            writer.writerow([r.symbol, r.entry_time.isoformat(), r.exit_time.isoformat(), r.entry_price, r.exit_price, r.holding_time_secs, r.pnl, r.mfe, r.mae, r.exit_reason])
+            
+    print(f"\nExported signals to: {signals_csv_path.name}")
+    print(f"Exported trade analytics to: {trades_csv_path.name}")
     print("\n[OK] ORB Strategy backtest verification complete: ALL TESTS PASSED!")
 
 if __name__ == "__main__":
