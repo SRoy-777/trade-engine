@@ -13,6 +13,7 @@ class PaperBroker(BaseBroker):
         self._cash = initial_cash_inr
         self.latency_ms = latency_ms # Simulated network roundtrip execution delay in ms
         self.product_type = product_type.upper() # INTRADAY or DELIVERY
+        self.current_time: Optional[datetime] = None # Simulated time clock driven by ticks
         
         # Positions: symbol -> {"qty": float, "avg_price": float}
         self._positions: Dict[str, Dict[str, float]] = {}
@@ -66,7 +67,7 @@ class PaperBroker(BaseBroker):
             "price": order_request["price"],
             "order_type": order_request["order_type"], # MARKET / LIMIT
             "status": "SUBMITTED",
-            "submitted_at": datetime.utcnow().isoformat()
+            "submitted_at": (self.current_time or datetime.utcnow()).isoformat()
         }
 
         async with self._lock:
@@ -75,7 +76,8 @@ class PaperBroker(BaseBroker):
             
             if order["order_type"] == "MARKET":
                 # Market orders are queued with a delay to mimic roundtrip execution latency
-                fill_time = datetime.utcnow() + timedelta(milliseconds=self.latency_ms)
+                current_ts = self.current_time or datetime.utcnow()
+                fill_time = current_ts + timedelta(milliseconds=self.latency_ms)
                 order["fill_after"] = fill_time
                 order["status"] = "QUEUED_LATENCY"
                 self._pending_orders[order_id] = order
@@ -94,7 +96,7 @@ class PaperBroker(BaseBroker):
             if order_id in self._pending_orders:
                 order = self._pending_orders.pop(order_id)
                 order["status"] = "CANCELLED"
-                order["cancelled_at"] = datetime.utcnow().isoformat()
+                order["cancelled_at"] = (self.current_time or datetime.utcnow()).isoformat()
                 dhan_logger.info(f"[Paper Broker] Order cancelled: {order_id}")
                 return True
         return False
@@ -103,6 +105,7 @@ class PaperBroker(BaseBroker):
         """Updates prices and checks if any queued limit or latency market orders are filled."""
         symbol = packet.security_id
         price = packet.ltp
+        self.current_time = packet.timestamp # Update simulated clock
         
         async with self._lock:
             self._last_prices[symbol] = price
@@ -112,10 +115,10 @@ class PaperBroker(BaseBroker):
                 if order["symbol"] != symbol:
                     continue
                 
-                # Check MARKET order latency delay
+                # Check MARKET order latency delay using simulated tick time
                 if order["order_type"] == "MARKET":
                     fill_after = order.get("fill_after")
-                    if fill_after and datetime.utcnow() >= fill_after:
+                    if fill_after and self.current_time >= fill_after:
                         to_fill.append((order_id, price))
                     continue
                 

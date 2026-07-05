@@ -91,14 +91,20 @@ async def run_simulation():
         # Exits simulation based on Day cycle index
         if day_offset % 3 == 0:
             # Day type A: Hit Target Profit (+2x range)
-            ticks.append((current_date.replace(hour=10, minute=0, second=0, microsecond=0), day_base_price + 15.0, 1000, day_base_price))
+            close_price = day_base_price + 15.0
+            ticks.append((current_date.replace(hour=10, minute=0, second=0, microsecond=0), close_price, 1000, day_base_price))
         elif day_offset % 3 == 1:
             # Day type B: Hit Stop Loss (drops below range low)
-            ticks.append((current_date.replace(hour=10, minute=15, second=0, microsecond=0), day_base_price - 3.0, 1000, day_base_price))
+            close_price = day_base_price - 3.0
+            ticks.append((current_date.replace(hour=10, minute=15, second=0, microsecond=0), close_price, 1000, day_base_price))
         else:
             # Day type C: Forced Intraday Square Off at 15:10
             ticks.append((current_date.replace(hour=12, minute=0, second=0, microsecond=0), day_base_price + 6.0, 1000, day_base_price))
-            ticks.append((current_date.replace(hour=15, minute=10, second=0, microsecond=0), day_base_price + 7.0, 1000, day_base_price))
+            close_price = day_base_price + 7.0
+            ticks.append((current_date.replace(hour=15, minute=10, second=0, microsecond=0), close_price, 1000, day_base_price))
+            
+        # Settle the day by adding a tick at 15:15:00 to clear execution queues
+        ticks.append((current_date.replace(hour=15, minute=15, second=0, microsecond=0), close_price, 0, day_base_price))
 
     # 4. Run ticks through the simulator
     print(f"Replaying {len(ticks)} ticks through strategy manager and broker...")
@@ -204,7 +210,15 @@ async def run_simulation():
     # Track order fill metrics to match transaction charges
     broker_portfolio = broker.get_portfolio()
     
-    with open(report_path, mode="w", newline="", encoding="utf-8") as f:
+    try:
+        f = open(report_path, mode="w", newline="", encoding="utf-8")
+    except PermissionError:
+        import time
+        report_path = backend_dir.parent / "market_data" / f"full_backtest_report_{int(time.time())}.csv"
+        f = open(report_path, mode="w", newline="", encoding="utf-8")
+        print(f"\n[Warning] full_backtest_report.csv is currently open or locked. Exporting fallback to: {report_path.name}")
+
+    with f:
         writer = csv.writer(f)
         writer.writerow([
             "Trade ID", "Symbol", "Product Type", "Entry Time", "Exit Time", 
@@ -228,8 +242,11 @@ async def run_simulation():
             ])
 
     print("\n================ BACKTEST COMPLETE ================")
+    print(f"  Ending Cash        : Rs.{broker_portfolio['cash_inr']:,.2f}")
+    print(f"  Holdings Value     : Rs.{broker_portfolio['holdings_market_value_inr']:,.2f}")
     print(f"  Ending Cash NAV    : Rs.{broker_portfolio['net_asset_value_inr']:,.2f}")
     print(f"  Total Fees/Taxes   : Rs.{broker_portfolio['total_fees_paid_inr']:,.2f}")
+    print(f"  Active Positions   : {broker_portfolio['positions']}")
     print(f"  Detailed Report CSV: {report_path.name}")
     print("===================================================")
 
