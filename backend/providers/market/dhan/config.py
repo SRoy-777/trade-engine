@@ -4,8 +4,8 @@ from pydantic import Field
 class DhanSettings(BaseSettings):
     DHAN_API_KEY: str = Field(default="")
     DHAN_API_SECRET: str = Field(default="")
-    CLIENT_ID: str = Field(...)
-    ACCESS_TOKEN: str = Field(...)
+    CLIENT_ID: str = Field(default="")
+    ACCESS_TOKEN: str = Field(default="")
     WS_URL: str = Field(default="wss://api-feed.dhan.co")
     LOG_LEVEL: str = Field(default="INFO")
 
