@@ -13,7 +13,6 @@ load_dotenv(dotenv_path=backend_dir / ".env")
 from core.broker.paper import PaperBroker
 from core.risk.controller import RiskController
 from core.strategy.manager import StrategyManager
-from core.strategy.templates.day_trading import DayTradingTrendFollower
 from core.strategy.templates.hft_scalper import HftMicroScalper
 from storage_engine.csv_source import CSVReplaySource
 from providers.market.dhan.models import MarketPacket
@@ -21,7 +20,7 @@ from providers.market.dhan.models import MarketPacket
 async def run_backtest():
     print("==================================================")
     # 1. Setup Data Source
-    csv_path = backend_dir.parent / "market_data" / "historical_data.csv"
+    csv_path = backend_dir.parent / "market_data" / "tatamotors_data.csv"
     if not csv_path.exists():
         print(f"Error: Historical CSV file not found at {csv_path}")
         return
@@ -29,11 +28,11 @@ async def run_backtest():
     print(f"Loading historical data from: {csv_path.name}")
     csv_source = CSVReplaySource(str(csv_path))
     
-    # 2. Setup Paper Broker (50 Lakh INR initial balance)
-    broker = PaperBroker(initial_cash_inr=5000000.0)
+    # 2. Setup Paper Broker (50 Lakh INR initial balance, 50ms matching latency)
+    broker = PaperBroker(initial_cash_inr=5000000.0, latency_ms=50.0)
     risk = RiskController(
-        max_capital_per_trade_inr=30000000.0, # Increased to ₹3 Crore
-        max_daily_loss_inr=20000.0,
+        max_capital_per_trade_inr=30000000.0, # ₹3 Crore limit
+        max_daily_loss_inr=50000.0,
         margin_leverage_multiplier=5.0
     )
     manager = StrategyManager(broker, risk)
@@ -41,8 +40,8 @@ async def run_backtest():
     # 3. Choose and Register Strategy (HFT Micro Scalper)
     strategy = HftMicroScalper(
         strategy_id="backtest_scalp_01",
-        name="HFT Scalper Backtest",
-        symbols=["INFY"],
+        name="HFT Scalper Backtest (TATAMOTORS)",
+        symbols=["TATAMOTORS"],
         target_profit_inr=1000.0,
         ticks_target=2
     )
@@ -58,11 +57,10 @@ async def run_backtest():
             break
             
         # Convert raw CSV row dictionary into MarketPacket
-        # Expected CSV columns: timestamp, symbol, ltp, volume
         packet = MarketPacket(
             packet_type="Ticker",
             exchange_segment="NSE_EQ",
-            security_id=row.get("symbol", "INFY"),
+            security_id=row.get("symbol", "TATAMOTORS"),
             ltp=float(row.get("ltp", 0.0)),
             volume=int(row.get("volume", 0)) if row.get("volume") else None,
             timestamp=datetime.strptime(row.get("timestamp"), "%Y-%m-%dT%H:%M:%S.%fZ") if "timestamp" in row and row.get("timestamp") else datetime.utcnow()
@@ -70,8 +68,8 @@ async def run_backtest():
         
         await manager.on_tick(packet)
         packet_count += 1
-        # Brief yield to event loop to process async order fills
-        await asyncio.sleep(0.001)
+        # Brief yield to event loop to process async latency order fills
+        await asyncio.sleep(0.01)
 
     await csv_source.close()
 
@@ -88,8 +86,9 @@ async def run_backtest():
     
     portfolio = broker.get_portfolio()
     print("\nBroker Account Status:")
-    print(f"  Ending Cash   : Rs.{portfolio['cash_inr']:,.2f}")
-    print(f"  Net Asset Value: Rs.{portfolio['net_asset_value_inr']:,.2f}")
+    print(f"  Ending Cash     : Rs.{portfolio['cash_inr']:,.2f}")
+    print(f"  Net Asset Value  : Rs.{portfolio['net_asset_value_inr']:,.2f}")
+    print(f"  Total Taxes/Fees : Rs.{portfolio['total_fees_paid_inr']:,.2f}")
     print("==================================================")
 
 if __name__ == "__main__":
