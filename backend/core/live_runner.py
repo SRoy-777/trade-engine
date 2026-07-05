@@ -4,7 +4,6 @@ from typing import Dict, Any, Callable, Optional
 from core.broker.paper import PaperBroker
 from core.risk.controller import RiskController
 from core.strategy.manager import StrategyManager
-from core.strategy.templates.hft_scalper import HftMicroScalper
 from providers.market.dhan.market_provider import DhanMarketProvider
 from providers.market.dhan.models import MarketPacket
 from utils.logger_setup import logger
@@ -16,7 +15,7 @@ class LiveTradingRunner:
         self.provider: Optional[DhanMarketProvider] = None
         self.manager: Optional[StrategyManager] = None
         self.broker: Optional[PaperBroker] = None
-        self.strategy: Optional[HftMicroScalper] = None
+        self.strategy: Optional[Any] = None
         self.active = False
         self.active_symbol = ""
         self._ui_callback: Optional[Callable[[Dict[str, Any]], None]] = None
@@ -41,16 +40,8 @@ class LiveTradingRunner:
         )
         self.manager = StrategyManager(self.broker, risk)
 
-        # 2. Register HFT Scalper strategy
-        self.strategy = HftMicroScalper(
-            strategy_id="ui_live_scalp_01",
-            name=f"HFT Scalper: {symbol}",
-            symbols=[symbol],
-            target_profit_inr=target_profit,
-            ticks_target=ticks_target,
-            capital_limit=capital
-        )
-        self.manager.register_strategy(self.strategy)
+        # 2. No strategy registered (cleanup complete)
+        self.strategy = None
         self.active_symbol = symbol
         self._ui_callback = ui_callback
 
