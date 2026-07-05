@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Callable, Optional
 from core.broker.paper import PaperBroker
 from core.risk.controller import RiskController
@@ -82,7 +82,7 @@ class LiveTradingRunner:
         latest_event = None
         if packet:
             latest_event = {
-                "event_id": f"event_{datetime.utcnow().timestamp()}",
+                "event_id": f"event_{datetime.now(timezone.utc).timestamp()}",
                 "correlation_id": "live_correlation",
                 "symbol": packet.security_id,
                 "ltp": packet.ltp,
@@ -92,8 +92,8 @@ class LiveTradingRunner:
                 "close": packet.ltp,
                 "volume": packet.volume or 0,
                 "exchange_timestamp": packet.timestamp.isoformat() if packet.timestamp else None,
-                "received_timestamp": datetime.utcnow().isoformat(),
-                "processed_timestamp": datetime.utcnow().isoformat(),
+                "received_timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                "processed_timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             }
 
         update_msg = {
@@ -110,7 +110,7 @@ class LiveTradingRunner:
                 "total_inserts": 0,
                 "last_symbol": self.active_symbol,
                 "last_price": packet.ltp if packet else 0.0,
-                "last_timestamp": datetime.utcnow().isoformat(),
+                "last_timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 "replay_delay_secs": 0.0
             },
             "status": {
@@ -121,7 +121,7 @@ class LiveTradingRunner:
                 "packets_processed": 100,
                 "last_symbol": self.active_symbol,
                 "last_price": packet.ltp if packet else 0.0,
-                "last_timestamp": datetime.utcnow().isoformat(),
+                "last_timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 "elapsed_time_secs": 10,
                 "session_id": "live_session",
                 "provider_status": "RUNNING" if self.active else "STOPPED"
