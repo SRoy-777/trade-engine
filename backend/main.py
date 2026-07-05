@@ -15,6 +15,7 @@ from event_bus.event_bus import event_bus
 from services.metrics_service import metrics_service
 from api.routes import router as api_router
 from api.websocket import websocket_broadcaster
+from core.live_runner import live_runner
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -92,6 +93,7 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 msg = json.loads(data)
                 action = msg.get("action")
+                value = msg.get("value")
                 
                 if action == "start":
                     await feed_manager.start()
@@ -102,8 +104,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif action == "step":
                     await feed_manager.step()
                 elif action == "speed":
-                    speed_val = float(msg.get("value", 1.0))
+                    speed_val = float(value if value is not None else 1.0)
                     await feed_manager.set_speed(speed_val)
+                elif action == "start_live_strategy":
+                    def ui_broadcast(update_msg):
+                        asyncio.create_task(websocket_broadcaster.send_to_all(update_msg))
+                    await live_runner.start(value or {}, ui_broadcast)
+                elif action == "stop_live_strategy":
+                    await live_runner.stop()
             except Exception as parse_err:
                 logger.debug(f"Error handling websocket client packet: {parse_err}")
                 

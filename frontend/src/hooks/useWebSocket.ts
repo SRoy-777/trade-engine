@@ -146,6 +146,14 @@ export function useWebSocket(overrideUrl?: string) {
   const stepReplay = useCallback(() => sendAction("step"), [sendAction]);
   const setReplaySpeed = useCallback((speed: number) => sendAction("speed", speed), [sendAction]);
 
+  const startLiveStrategy = useCallback((symbol: string, capital: number, targetProfit: number, ticksTarget: number) => {
+    sendAction("start_live_strategy", { symbol, capital, target_profit: targetProfit, ticks_target: ticksTarget });
+  }, [sendAction]);
+
+  const stopLiveStrategy = useCallback(() => {
+    sendAction("stop_live_strategy");
+  }, [sendAction]);
+
   return {
     connectionStatus,
     metrics,
@@ -156,5 +164,7 @@ export function useWebSocket(overrideUrl?: string) {
     stopReplay,
     stepReplay,
     setReplaySpeed,
+    startLiveStrategy,
+    stopLiveStrategy,
   };
 }

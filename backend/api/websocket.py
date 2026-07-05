@@ -135,4 +135,18 @@ class WebSocketBroadcaster:
             except Exception as loop_err:
                 logger.error(f"Error in WebSocket broadcast loop: {loop_err}")
 
+    async def send_to_all(self, message: Dict[str, Any]) -> None:
+        """Sends a JSON-serializable message directly to all active WebSocket clients."""
+        msg_str = json.dumps(message)
+        async with self._lock:
+            closed_websockets = []
+            for ws in self._active_connections:
+                try:
+                    await ws.send_text(msg_str)
+                except Exception:
+                    closed_websockets.append(ws)
+            for ws in closed_websockets:
+                if ws in self._active_connections:
+                    self._active_connections.remove(ws)
+
 websocket_broadcaster = WebSocketBroadcaster()

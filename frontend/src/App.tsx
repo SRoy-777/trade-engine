@@ -16,6 +16,8 @@ const App: React.FC = () => {
     stopReplay,
     stepReplay,
     setReplaySpeed,
+    startLiveStrategy,
+    stopLiveStrategy,
   } = useWebSocket();
 
   return (
@@ -28,9 +30,9 @@ const App: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              Trade Engine <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 uppercase font-semibold">Phase 1</span>
+              Trade Engine <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 uppercase font-semibold">Phase 2</span>
             </h1>
-            <p className="text-xs text-slate-500">Market Data Pipeline Ingestion Dashboard</p>
+            <p className="text-xs text-slate-500">Live Strategy Execution Dashboard</p>
           </div>
         </div>
         
@@ -68,6 +70,8 @@ const App: React.FC = () => {
           stopReplay={stopReplay}
           stepReplay={stepReplay}
           setReplaySpeed={setReplaySpeed}
+          startLiveStrategy={startLiveStrategy}
+          stopLiveStrategy={stopLiveStrategy}
         />
 
         {/* 4. Live Event Log Section */}
