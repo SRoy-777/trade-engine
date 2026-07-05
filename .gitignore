@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.env
+.pytest_cache/
+
+# Node/React
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+.yarn-clean
+
+# DuckDB Database & Parquet Local storage
+*.db
+*.db.wal
+*.db.tmp
+**/storage/
+**/test_bronze/
+
+# IDEs & System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
