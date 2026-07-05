@@ -52,7 +52,21 @@ export interface WSMessage {
   latest_event: MarketEventData | null;
 }
 
-export function useWebSocket(url: string = "ws://localhost:8000/ws") {
+const getWsUrl = (overrideUrl?: string): string => {
+  if (overrideUrl) return overrideUrl;
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.host;
+  
+  // If debugging locally on Vite port 5173, point to backend on port 8000
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    if (window.location.port === "5173") {
+      return "ws://localhost:8000/ws";
+    }
+  }
+  return `${protocol}//${host}/ws`;
+};
+
+export function useWebSocket(overrideUrl?: string) {
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const [metrics, setMetrics] = useState<TelemetryMetrics | null>(null);
   const [status, setStatus] = useState<ProviderStatus | null>(null);
@@ -67,7 +81,7 @@ export function useWebSocket(url: string = "ws://localhost:8000/ws") {
 
     const connect = () => {
       setConnectionStatus("connecting");
-      const socket = new WebSocket(url);
+      const socket = new WebSocket(getWsUrl(overrideUrl));
       wsRef.current = socket;
 
       socket.onopen = () => {
@@ -117,7 +131,7 @@ export function useWebSocket(url: string = "ws://localhost:8000/ws") {
       }
       clearTimeout(reconnectTimeout);
     };
-  }, [url]);
+  }, [overrideUrl]);
 
   // Send action utilities
   const sendAction = useCallback((action: string, value?: any) => {

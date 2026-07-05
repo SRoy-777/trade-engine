@@ -16,7 +16,7 @@ const App: React.FC = () => {
     stopReplay,
     stepReplay,
     setReplaySpeed,
-  } = useWebSocket("ws://localhost:8000/ws");
+  } = useWebSocket();
 
   return (
     <div className="min-h-screen bg-[#07090e] bg-gradient-to-br from-[#07090e] via-[#0c0f1d] to-[#0a0c14] text-slate-100 p-6 font-sans">

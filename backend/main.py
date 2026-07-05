@@ -113,6 +113,12 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.debug(f"Websocket socket handler exception: {e}")
         await websocket_broadcaster.disconnect(websocket)
 
+# Serve compiled frontend static assets in production if directory exists
+from fastapi.staticfiles import StaticFiles
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
