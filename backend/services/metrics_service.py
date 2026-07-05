@@ -4,8 +4,8 @@ from typing import Dict, Any, Optional
 from market_feed.manager import feed_manager
 from event_bus.event_bus import event_bus
 from market_feed.parser import packet_parser
-from storage.recorder import packet_recorder
-from storage.logger import duckdb_logger
+from storage_engine.recorder import packet_recorder
+from storage_engine.logger import duckdb_logger
 
 class MetricsService:
     """Service responsible for aggregating and tracking real-time pipeline metrics and latency stats."""
