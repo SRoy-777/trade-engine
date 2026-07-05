@@ -98,6 +98,7 @@ async def run_simulation():
     # 4. Run ticks through the simulator
     print(f"Replaying {len(ticks)} ticks through strategy manager and broker...")
     
+    exiting = False
     for ts, price, vol in ticks:
         # Construct event packet
         event = MarketEvent(
@@ -161,9 +162,10 @@ async def run_simulation():
                 })
         
         # Handle sell executions when strategy position exits
-        if not strategy.active_position and len(broker._positions) > 0:
+        if not strategy.active_position and len(broker._positions) > 0 and not exiting:
             pos_qty = broker._positions[symbol]["qty"]
             if pos_qty > 0:
+                exiting = True
                 await broker.submit_order({
                     "strategy_id": "orb_full",
                     "symbol": symbol,
@@ -181,6 +183,10 @@ async def run_simulation():
                     "qty": pos_qty,
                     "type": product_type
                 })
+
+        # Reset exit state when we are active in a position again
+        if strategy.active_position:
+            exiting = False
 
         await asyncio.sleep(0.0001)
 
