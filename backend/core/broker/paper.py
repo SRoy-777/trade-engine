@@ -9,9 +9,10 @@ from providers.market.dhan.logger import dhan_logger
 class PaperBroker(BaseBroker):
     """Simulated execution engine matching orders with latency delays and Dhan transaction fees in INR."""
 
-    def __init__(self, initial_cash_inr: float = 10000000.0, latency_ms: float = 50.0):
+    def __init__(self, initial_cash_inr: float = 10000000.0, latency_ms: float = 50.0, product_type: str = "INTRADAY"):
         self._cash = initial_cash_inr
         self.latency_ms = latency_ms # Simulated network roundtrip execution delay in ms
+        self.product_type = product_type.upper() # INTRADAY or DELIVERY
         
         # Positions: symbol -> {"qty": float, "avg_price": float}
         self._positions: Dict[str, Dict[str, float]] = {}
@@ -129,26 +130,22 @@ class PaperBroker(BaseBroker):
             for order_id, fill_price in to_fill:
                 self._pending_orders.pop(order_id, None)
                 await self._fill_order(order_id, fill_price)
-
+ 
     def _calculate_transaction_charges(self, side: str, value: float) -> float:
-        """Calculates Dhan's standard Indian intraday transaction fees in INR."""
-        # 1. Brokerage: 0.03% of trade value or Rs. 20 (whichever is lower)
-        brokerage = min(20.0, value * 0.0003)
-        
-        # 2. Exchange Transaction Charge (NSE Equity Intraday: 0.00322%)
-        exch_txn_charge = value * 0.0000322
-        
-        # 3. SEBI Turnover Fee (Rs 10 per Crore / 0.0001%)
-        sebi_fee = value * 0.000001
-        
-        # 4. GST: 18% on (Brokerage + Exchange Txn Charge + SEBI Fee)
-        gst = (brokerage + exch_txn_charge + sebi_fee) * 0.18
-        
-        # 5. Securities Transaction Tax (STT: 0.025% on Sell side only)
-        stt = value * 0.00025 if side == "SELL" else 0.0
-        
-        # 6. Stamp Duty (Intraday Equity: 0.003% on Buy side only)
-        stamp_duty = value * 0.00003 if side == "BUY" else 0.0
+        """Calculates Dhan's standard Indian transaction fees in INR based on product type."""
+        if self.product_type == "DELIVERY":
+            brokerage = 0.0
+            stt = value * 0.001  # 0.1% on Buy & Sell for delivery
+            stamp_duty = value * 0.00015 if side == "BUY" else 0.0  # 0.015% on Buy for delivery
+        else:
+            # INTRADAY
+            brokerage = min(20.0, value * 0.0003)  # 0.03% or Rs. 20 cap
+            stt = value * 0.00025 if side == "SELL" else 0.0  # 0.025% on Sell side only
+            stamp_duty = value * 0.00003 if side == "BUY" else 0.0  # 0.003% on Buy side only
+
+        exch_txn_charge = value * 0.0000322  # NSE Equity
+        sebi_fee = value * 0.000001  # SEBI Fee
+        gst = (brokerage + exch_txn_charge + sebi_fee) * 0.18  # 18% GST
         
         total_charges = brokerage + exch_txn_charge + sebi_fee + gst + stt + stamp_duty
         return total_charges
