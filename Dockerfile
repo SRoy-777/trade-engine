@@ -36,6 +36,7 @@ COPY market_data/ ./market_data/
 EXPOSE 7860
 ENV PORT=7860
 ENV HOST=0.0.0.0
+ENV PYTHONPATH=/app
 ENV REPLAY_FILE_PATH=market_data/historical_data.csv
 ENV DATABASE_PATH=storage/trade_engine.db
 ENV BRONZE_STORAGE_DIR=storage/bronze
