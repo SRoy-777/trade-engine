@@ -60,7 +60,8 @@ class LiveTradingRunner:
                 return
             
             # Feed packet to strategy manager
-            await self.manager.on_tick(packet)
+            if self.manager:
+                await self.manager.on_tick(packet)
             
             # Send latest prices & position updates to frontend
             self.broadcast_update(packet)
