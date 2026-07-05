@@ -69,37 +69,42 @@ async def run_simulation():
     start_date = datetime.now() - timedelta(days=num_days)
     
     ticks = []
+    import math
     for day_offset in range(num_days):
         current_date = start_date + timedelta(days=day_offset)
         # Skip weekends
         if current_date.weekday() >= 5:
             continue
             
+        # Dynamically calculate day's starting base price (trends from ~825 to 1041 with fluctuations)
+        day_base_price = base_price - (num_days - day_offset) * 1.2 + 35 * math.sin(day_offset / 10)
+        day_base_price = round(day_base_price * 20) / 20 # Round to nearest 0.05 tick
+        
         # Day Open: 09:15 Range Formation
-        ticks.append((current_date.replace(hour=9, minute=15, second=0, microsecond=0), base_price - 1.0, 1000))
-        ticks.append((current_date.replace(hour=9, minute=20, second=0, microsecond=0), base_price + 4.0, 1000))
-        ticks.append((current_date.replace(hour=9, minute=30, second=0, microsecond=0), base_price + 2.0, 1000))
+        ticks.append((current_date.replace(hour=9, minute=15, second=0, microsecond=0), day_base_price - 1.0, 1000, day_base_price))
+        ticks.append((current_date.replace(hour=9, minute=20, second=0, microsecond=0), day_base_price + 4.0, 1000, day_base_price))
+        ticks.append((current_date.replace(hour=9, minute=30, second=0, microsecond=0), day_base_price + 2.0, 1000, day_base_price))
         
         # Day Breakout Check: 09:35 (Triggers BUY breakout)
-        ticks.append((current_date.replace(hour=9, minute=35, second=0, microsecond=0), base_price + 5.0, 4000))
+        ticks.append((current_date.replace(hour=9, minute=35, second=0, microsecond=0), day_base_price + 5.0, 4000, day_base_price))
         
         # Exits simulation based on Day cycle index
         if day_offset % 3 == 0:
             # Day type A: Hit Target Profit (+2x range)
-            ticks.append((current_date.replace(hour=10, minute=0, second=0, microsecond=0), base_price + 15.0, 1000))
+            ticks.append((current_date.replace(hour=10, minute=0, second=0, microsecond=0), day_base_price + 15.0, 1000, day_base_price))
         elif day_offset % 3 == 1:
             # Day type B: Hit Stop Loss (drops below range low)
-            ticks.append((current_date.replace(hour=10, minute=15, second=0, microsecond=0), base_price - 3.0, 1000))
+            ticks.append((current_date.replace(hour=10, minute=15, second=0, microsecond=0), day_base_price - 3.0, 1000, day_base_price))
         else:
             # Day type C: Forced Intraday Square Off at 15:10
-            ticks.append((current_date.replace(hour=12, minute=0, second=0, microsecond=0), base_price + 6.0, 1000))
-            ticks.append((current_date.replace(hour=15, minute=10, second=0, microsecond=0), base_price + 7.0, 1000))
+            ticks.append((current_date.replace(hour=12, minute=0, second=0, microsecond=0), day_base_price + 6.0, 1000, day_base_price))
+            ticks.append((current_date.replace(hour=15, minute=10, second=0, microsecond=0), day_base_price + 7.0, 1000, day_base_price))
 
     # 4. Run ticks through the simulator
     print(f"Replaying {len(ticks)} ticks through strategy manager and broker...")
     
     exiting = False
-    for ts, price, vol in ticks:
+    for ts, price, vol, day_open in ticks:
         # Construct event packet
         event = MarketEvent(
             event_id=f"evt_{uuid.uuid4().hex[:8]}",
@@ -109,7 +114,7 @@ async def run_simulation():
             processed_timestamp=datetime.utcnow(),
             symbol=symbol,
             ltp=price,
-            open=base_price,
+            open=day_open,
             high=price,
             low=price,
             close=price,
