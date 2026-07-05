@@ -24,7 +24,9 @@ dist-ssr/
 *.db
 *.db.wal
 *.db.tmp
+*.parquet
 **/storage/
+**/storage_engine/bronze/
 **/test_bronze/
 
 # IDEs & System
