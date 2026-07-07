@@ -47,13 +47,11 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
     capital = float(config.get("capital", 60000.0))
     leverage = float(config.get("leverage", 5.0))
     
-    # Try different suffixes for historical files
-    history_dir = backend_dir.parent / "market_data" / "history"
+    # Locate data file in Next 50 historical directory
+    history_dir = backend_dir.parent / "market_data" / "history" / "next_50"
     csv_paths = [
         history_dir / f"{symbol}_3y_5m.csv",
-        history_dir / f"{symbol}_3y_5min.csv",
-        history_dir / f"{symbol}_180d.csv",
-        history_dir / f"{symbol}_180d_5min.csv"
+        history_dir / f"{symbol}_3y_5min.csv"
     ]
     
     csv_path = None
@@ -63,7 +61,7 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
             break
             
     if not csv_path:
-        print(f"  [SKIPPED] Historical data not found for {symbol} (checked suffixes 3y_5m, 3y_5min, 180d)")
+        print(f"  [SKIPPED] Historical data not found for {symbol} in next_50 folder")
         return [], []
 
     print(f"  [RUNNING] Backtest for {symbol} using {csv_path.name}...")
@@ -87,7 +85,7 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
     )
     manager = StrategyManager(broker, risk)
 
-    # Initialize ORB strategy and override symbol
+    # Initialize strategy and bind symbol overrides
     strategy = ORBStrategy(str(config_path))
     strategy.symbol = symbol
     strategy.symbols = [symbol]
@@ -119,7 +117,7 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
     daily_equity = []
     last_logged_date = None
 
-    # Process ticks
+    # Ingestion simulation
     for idx, r in enumerate(rows):
         ts = r["datetime_parsed"]
         packet = MarketPacket(
@@ -135,9 +133,7 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
             close=float(r["close"])
         )
 
-        # Feed tick
         await manager.on_tick(packet)
-        # Yield to event loop if orders are pending
         if len(broker._pending_orders) > 0 or strategy.pending_entry is not None or (strategy.active_trade is not None and strategy.active_trade.get("exit_order_pending")):
             await asyncio.sleep(0.0001)
 
@@ -182,9 +178,9 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
             "Cash": portfolio["cash_inr"]
         })
 
-    # Save individual reports
-    output_dir = backend_dir.parent / config.get("output_dir", "market_data/orb") / "individual" / symbol
-    await compile_and_save_individual_reports(strategy, daily_equity, capital, output_dir)
+    # Individual stock output goes to individual_next_50 subfolder
+    individual_output_dir = backend_dir.parent / "market_data" / "orb" / "individual_next_50" / symbol
+    await compile_and_save_individual_reports(strategy, daily_equity, capital, individual_output_dir)
 
     print(f"  [COMPLETED] {symbol} backtest. Trades: {len(strategy.trade_history)}, Final NAV: Rs. {portfolio['net_asset_value_inr']:.2f}")
     return strategy.trade_history, daily_equity
@@ -206,7 +202,7 @@ async def compile_and_save_individual_reports(strategy: ORBStrategy, daily_equit
         writer.writeheader()
         writer.writerows(trades)
 
-    # 2. Performance Summary
+    # 2. Save Performance Summary
     total_trades = len(trades)
     winning_trades = len([t for t in trades if t["Net_PnL"] > 0])
     losing_trades = len([t for t in trades if t["Net_PnL"] <= 0])
@@ -224,7 +220,7 @@ async def compile_and_save_individual_reports(strategy: ORBStrategy, daily_equit
     }
     pd.DataFrame(list(perf_summary.items()), columns=["Metric", "Value"]).to_csv(output_dir / "performance_summary.csv", index=False)
 
-    # 3. Monthly Returns calculation
+    # 3. Monthly Returns
     equity_df = pd.DataFrame(daily_equity)
     equity_df["Year_Month"] = pd.to_datetime(equity_df["Timestamp"]).dt.to_period("M")
     monthly_ret = []
@@ -236,17 +232,17 @@ async def compile_and_save_individual_reports(strategy: ORBStrategy, daily_equit
     safe_to_csv(pd.DataFrame(monthly_ret), output_dir / "monthly_returns.csv")
 
 async def run_simulation():
-    config_path = backend_dir.parent / "configs" / "orb.yaml"
+    config_path = backend_dir.parent / "configs" / "orb_next50.yaml"
 
     print(f"Loading ORB config from: {config_path}")
     if not config_path.exists():
-        print(f"Error: ORB config not found at {config_path}")
+        print(f"Error: ORB Next 50 config not found at {config_path}")
         return
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    # Determine symbols to backtest
+    # Determine symbols
     config_symbols = config.get("symbols", "ALL")
     
     symbols = []
@@ -254,13 +250,13 @@ async def run_simulation():
         symbols = config_symbols
     elif isinstance(config_symbols, str):
         if config_symbols.upper() == "ALL":
-            nifty_csv_path = backend_dir.parent / "market_data" / "nifty50_security_ids.csv"
+            nifty_csv_path = backend_dir.parent / "market_data" / "niftynext50_security_ids.csv"
             if nifty_csv_path.exists():
                 with open(nifty_csv_path, mode="r", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     symbols = [row["symbol"] for row in reader]
             else:
-                symbols = ["SBIN"]
+                symbols = ["ABB"]
         else:
             symbols = [config_symbols]
             
@@ -270,7 +266,7 @@ async def run_simulation():
     start_dt = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_dt = datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
-    print(f"Running simulation for {len(symbols)} symbols from {start_dt} to {end_dt}...")
+    print(f"Running simulation for {len(symbols)} Next 50 symbols from {start_dt} to {end_dt}...")
     
     master_trades = []
     all_daily_equities = {}
@@ -287,22 +283,18 @@ async def run_simulation():
         return
 
     # Consolidate Daily Equity Curve
-    print("\nConsolidating daily equity across all symbols...")
-    # Gather all unique dates
+    print("\nConsolidating daily equity across all Next 50 symbols...")
     unique_dates = set()
     for symbol, de_list in all_daily_equities.items():
         for item in de_list:
             unique_dates.add(item["Date"])
             
     sorted_dates = sorted(list(unique_dates))
-    
     master_daily_equity = []
     
-    # Store last known state for each symbol
     last_known_equity = {symbol: {"Net_Asset_Value": capital, "Cash": capital} for symbol in all_daily_equities.keys()}
     
     for d in sorted_dates:
-        # Update last known values for any symbol that has an entry on this date
         for symbol, de_list in all_daily_equities.items():
             match = next((item for item in de_list if item["Date"] == d), None)
             if match:
@@ -311,11 +303,9 @@ async def run_simulation():
                     "Cash": match["Cash"]
                 }
                 
-        # Sum states
         total_nav = sum(item["Net_Asset_Value"] for item in last_known_equity.values())
         total_cash = sum(item["Cash"] for item in last_known_equity.values())
         
-        # We need timestamp format
         dt_combine = datetime.combine(d, datetime.min.time())
         master_daily_equity.append({
             "Date": d,
@@ -325,7 +315,9 @@ async def run_simulation():
         })
         
     master_equity_df = pd.DataFrame(master_daily_equity)
-    output_dir = backend_dir.parent / config.get("output_dir", "market_data/orb")
+    
+    # Output dir for Next 50 consolidated reports: market_data/orb/nifty_next_50/
+    output_dir = backend_dir.parent / "market_data" / "orb" / "nifty_next_50"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     safe_to_csv(master_equity_df, output_dir / "master_equity_curve.csv")
@@ -434,7 +426,7 @@ async def run_simulation():
     pd.DataFrame(list(perf_summary.items()), columns=["Metric", "Value"]).to_csv(output_dir / "master_performance_summary.csv", index=False)
 
     print("==================================================")
-    print("   MASTER CONSOLIDATED PERFORMANCE REPORT")
+    print("   MASTER NEXT 50 CONSOLIDATED PERFORMANCE REPORT")
     print("==================================================")
     for k, v in perf_summary.items():
         if isinstance(v, float):

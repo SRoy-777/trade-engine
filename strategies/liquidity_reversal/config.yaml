@@ -1,0 +1,22 @@
+symbols: "SBIN"
+timeframe: 5m
+capital: 60000
+leverage: 5
+start_date: "2023-07-07"
+end_date: "2026-07-06"
+entry_lookback: 5
+exit_lookback: 5
+enable_stop_loss: true
+stop_loss_type: "previous_low" # none, percent, atr, previous_low, fixed_points
+stop_loss_pct: 0.5
+atr_length: 14
+atr_multiplier: 1.5
+previous_low_lookback: 5
+fixed_stop_points: 2.0
+enable_trailing_stop: false
+trailing_trigger_rr: 1.0
+trailing_step_rr: 0.5
+entry_start: "09:15"
+entry_end: "10:00"
+square_off: "15:15"
+output_dir: "market_data/liquidity_reversal"

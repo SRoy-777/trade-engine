@@ -46,24 +46,21 @@ class RiskController:
         # 3. Calculate Trade Value in INR
         order_value = execution_price * qty
         
-        # 4. Enforce Single-Trade Capital Exposure Limit
-        if order_value > self.max_capital_per_trade_inr:
+        # 4. Enforce Single-Trade Capital Exposure Limit (only for opening trades)
+        current_position = broker_portfolio.get("positions", {}).get(symbol, {}).get("qty", 0.0)
+        is_opening_trade = True
+        if side == "SELL" and current_position > 0:
+            is_opening_trade = False  # Liquidation/reducing position
+        elif side == "BUY" and current_position < 0:
+            is_opening_trade = False  # Cover short position
+
+        if is_opening_trade and order_value > self.max_capital_per_trade_inr:
             dhan_logger.warning(f"[Risk Block] Order size ₹{order_value:,.2f} exceeds max trade exposure cap of ₹{self.max_capital_per_trade_inr:,.2f}")
             raise ValueError(f"Order value ₹{order_value:.2f} exceeds single trade limit of ₹{self.max_capital_per_trade_inr:.2f}")
 
         # 5. Cash & Margin Leverage Verification (only for buys or short sells)
         available_cash = broker_portfolio.get("cash_inr", 0.0)
         buying_power = available_cash * self.margin_leverage
-        
-        # Note: In paper trading, we assume simple margin calculations
-        # Selling an existing long position reduces exposure, so it does not draw buying power
-        current_position = broker_portfolio.get("positions", {}).get(symbol, {}).get("qty", 0.0)
-        
-        is_opening_trade = True
-        if side == "SELL" and current_position > 0:
-            is_opening_trade = False  # Liquidation/reducing position
-        elif side == "BUY" and current_position < 0:
-            is_opening_trade = False  # Cover short position
             
         if is_opening_trade:
             required_margin = order_value # Intraday leverage applied below
