@@ -1,4 +1,4 @@
-enable_live_stocks: false
+enable_live_stocks: true
 symbols: [
     "TMPV",
     "BAJFINANCE",

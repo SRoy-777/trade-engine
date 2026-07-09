@@ -77,7 +77,8 @@ async def lifespan(app: FastAPI):
                 "allocation_strategy": yaml_config.get("allocation_strategy", "SINGLE_STOCK"),
                 "allocation_weights": yaml_config.get("allocation_weights", [0.5, 0.3, 0.2]),
                 "capital": yaml_config.get("capital", 100000.0),
-                "leverage": yaml_config.get("leverage", 5.0)
+                "leverage": yaml_config.get("leverage", 5.0),
+                "enable_live_stocks": yaml_config.get("enable_live_stocks", False)
             }
             
             def ui_broadcast(update_msg):
