@@ -236,6 +236,8 @@ class LiveTradingRunner:
             self.capital = float(config["capital"])
         if "leverage" in config:
             self.leverage = float(config["leverage"])
+        if "enable_live_stocks" in config:
+            self.enable_live_stocks = bool(config["enable_live_stocks"])
             
         if self.manager:
             self.manager.update_allocation_config({
@@ -249,28 +251,30 @@ class LiveTradingRunner:
                 strat.capital_limit = self.capital
                 strat.leverage = self.leverage
                 
-        # Persist dynamic config back to configs/orb.yaml on disk
+        # Persist updated parameters back to configs/orb.yaml on disk
+        config_path = "configs/orb.yaml"
+        if not os.path.exists(config_path) and os.path.exists(os.path.join("..", config_path)):
+            config_path = os.path.join("..", config_path)
+            
         try:
-            config_path = "configs/orb.yaml"
-            if not os.path.exists(config_path) and os.path.exists(os.path.join("..", config_path)):
-                config_path = os.path.join("..", config_path)
-                
+            current_config = {}
             if os.path.exists(config_path):
                 with open(config_path, "r") as f:
-                    existing = yaml.safe_load(f) or {}
-                
-                existing["symbols"] = self.symbols
-                existing["priority_ranking"] = self.priority_ranking
-                existing["allocation_strategy"] = self.allocation_strategy
-                existing["allocation_weights"] = self.allocation_weights
-                existing["capital"] = self.capital
-                existing["leverage"] = self.leverage
-                
-                with open(config_path, "w") as f:
-                    yaml.safe_dump(existing, f, default_flow_style=False)
-                logger.info(f"[Live Runner] Persisted dynamic config changes to {config_path}")
-        except Exception as e:
-            logger.error(f"[Live Runner] Failed to persist strategy configuration: {e}")
+                    current_config = yaml.safe_load(f) or {}
+            
+            current_config["enable_live_stocks"] = self.enable_live_stocks
+            current_config["symbols"] = self.symbols
+            current_config["priority_ranking"] = self.priority_ranking
+            current_config["allocation_strategy"] = self.allocation_strategy
+            current_config["allocation_weights"] = self.allocation_weights
+            current_config["capital"] = self.capital
+            current_config["leverage"] = self.leverage
+            
+            with open(config_path, "w") as f:
+                yaml.safe_dump(current_config, f, default_flow_style=False)
+            logger.info(f"[Live Runner] Successfully persisted config to {config_path}")
+        except Exception as err:
+            logger.error(f"[Live Runner] Failed to persist config to {config_path}: {err}")
             
         dhan_logger.info(f"[Live Runner] Dynamically updated configuration settings.")
         self.broadcast_update()
@@ -451,7 +455,8 @@ class LiveTradingRunner:
                 "allocation_strategy": self.allocation_strategy,
                 "allocation_weights": self.allocation_weights,
                 "capital": self.capital,
-                "leverage": self.leverage
+                "leverage": self.leverage,
+                "enable_live_stocks": self.enable_live_stocks
             }
         }
 
