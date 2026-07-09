@@ -2,7 +2,7 @@ import os
 import csv
 import yaml
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Callable, Optional, List
 from core.broker.paper import PaperBroker
 from core.risk.controller import RiskController
@@ -286,8 +286,9 @@ class LiveTradingRunner:
                 await asyncio.sleep(5)
                 now = datetime.now().timestamp()
                 
-                # Check for regular NSE market hours (9:15 to 15:30)
-                current_time = datetime.now().strftime("%H:%M")
+                # Check for regular NSE market hours (9:15 to 15:30) in IST
+                ist_tz = timezone(timedelta(hours=5, minutes=30))
+                current_time = datetime.now(ist_tz).strftime("%H:%M")
                 is_market_hours = "09:15" <= current_time <= "15:30"
                 
                 # Verify WebSocket connection health

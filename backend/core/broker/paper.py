@@ -107,7 +107,10 @@ class PaperBroker(BaseBroker):
 
     def _is_within_market_hours(self, ts: datetime) -> bool:
         """Validates session trading hour restrictions."""
-        time_str = ts.strftime("%H:%M")
+        # Convert timestamp to Indian Standard Time (IST) before checking market hours
+        ist_tz = timezone(timedelta(hours=5, minutes=30))
+        ts_ist = ts.astimezone(ist_tz)
+        time_str = ts_ist.strftime("%H:%M")
         
         if "PRE_OPEN" in self.sim_config.ALLOWED_SESSIONS and "09:00" <= time_str <= "09:08":
             return True
