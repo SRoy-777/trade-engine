@@ -15,7 +15,21 @@ symbols: [
     "HCLTECH",
     "MARUTI",
     "INDIGO",
-    "POWERGRID"
+    "POWERGRID",
+    "INDHOTEL",
+    "TATAPOWER",
+    "SOLARINDS",
+    "IRFC",
+    "CHOLAFIN",
+    "BOSCHLTD",
+    "CGPOWER",
+    "TVSMOTOR",
+    "MUTHOOTFIN",
+    "HAL",
+    "BAJAJHLDNG",
+    "TMCV",
+    "CUMMINSIND",
+    "ENRIN"
   ] # Can be "ALL", a single symbol (e.g., "SBIN"), or a list (e.g., ["SBIN", "RELIANCE"])
 timeframe: 5m
 capital: 60000
