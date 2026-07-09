@@ -104,7 +104,7 @@ class DhanWebSocketClient:
             await self._send_subscription(request_code, instruments)
 
     async def _send_subscription(self, request_code: int, instruments: List[Tuple[int, str]]) -> None:
-        """Sends the JSON subscription frame to Dhan WebSocket in batches of 100."""
+        """Sends the JSON subscription frame to Dhan WebSocket in batches of 100 grouped by segment."""
         if not self._ws:
             return
 
@@ -120,27 +120,38 @@ class DhanWebSocketClient:
             8: "BSE_FNO"
         }
 
+        # Group instruments by exchange segment to prevent mixing them in a single frame payload
+        grouped_instruments = {}
+        for ex, sec_id in instruments:
+            if ex not in grouped_instruments:
+                grouped_instruments[ex] = []
+            grouped_instruments[ex].append(sec_id)
+
         # Dhan limits JSON messages to 100 instruments per frame
         batch_size = 100
-        for i in range(0, len(instruments), batch_size):
-            batch = instruments[i:i + batch_size]
-            payload = {
-                "RequestCode": request_code,
-                "InstrumentCount": len(batch),
-                "InstrumentList": [
-                    {
-                        "ExchangeSegment": exch_map.get(ex, str(ex)),
-                        "SecurityId": str(sec_id)
-                    } for ex, sec_id in batch
-                ]
-            }
-            try:
-                dhan_logger.info(f"Subscribing to {len(batch)} instruments (Code={request_code})")
-                await self._ws.send(json.dumps(payload))
-                dhan_logger.info("Subscription Success")
-            except Exception as e:
-                dhan_logger.error(f"Subscription Failure: {e}")
-                raise DhanSubscriptionException(f"Failed to transmit subscription frame: {e}")
+        for ex, sec_ids in grouped_instruments.items():
+            segment_name = exch_map.get(ex, str(ex))
+            for i in range(0, len(sec_ids), batch_size):
+                batch_ids = sec_ids[i:i + batch_size]
+                payload = {
+                    "RequestCode": request_code,
+                    "InstrumentCount": len(batch_ids),
+                    "InstrumentList": [
+                        {
+                            "ExchangeSegment": segment_name,
+                            "SecurityId": str(sid)
+                        } for sid in batch_ids
+                    ]
+                }
+                try:
+                    dhan_logger.info(f"Subscribing to {len(batch_ids)} instruments for segment {segment_name} (Code={request_code})")
+                    await self._ws.send(json.dumps(payload))
+                    dhan_logger.info("Subscription Success")
+                    # Pause briefly to prevent overwhelming the server with back-to-back writes
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    dhan_logger.error(f"Subscription Failure: {e}")
+                    raise DhanSubscriptionException(f"Failed to transmit subscription frame: {e}")
 
     async def _resubscribe_all(self) -> None:
         """Re-subscribes to all registered instruments upon reconnecting."""
