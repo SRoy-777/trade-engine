@@ -1,6 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
 @import "tailwindcss";
 
-/* Premium dark theme custom overrides */
+/* Default variables */
 :root {
   background-color: #0b0f19;
   color: #f3f4f6;
@@ -13,6 +14,54 @@ body {
   overflow-x: hidden;
   background-color: #0b0f19;
   color: #f3f4f6;
+}
+
+/* Nature Theme variables override */
+.theme-nature {
+  --color-slate-950: #f5f2eb !important;      /* body bg */
+  --color-slate-900: #faf8f5 !important;      /* card bg */
+  --color-slate-850: #e3ded6 !important;      /* borders */
+  --color-slate-800: #dcd6c9 !important;
+  --color-slate-700: #cfc8b8 !important;
+  --color-slate-650: #c2baa7 !important;
+  --color-slate-600: #88988e !important;
+  
+  --color-slate-100: #101614 !important;      /* text primary */
+  --color-slate-200: #25332c !important;      /* text secondary */
+  --color-slate-350: #3c4e45 !important;      /* form text label */
+  --color-slate-300: #3b4d44 !important;
+  --color-slate-400: #556c60 !important;
+  --color-slate-500: #708a7b !important;
+  
+  --color-white: #0a0e0c !important;          /* header text */
+  --color-cyan-400: #2c5e43 !important;       /* accent color deep forest */
+  --color-cyan-500: #224934 !important;
+  
+  --color-emerald-400: #1b6a3b !important;    /* positive numbers */
+  --color-emerald-450: #145a32 !important;
+  --color-emerald-500: #114f2b !important;
+  
+  --color-rose-400: #922b21 !important;       /* negative numbers */
+  --color-rose-450: #7b241c !important;
+  --color-rose-500: #641e16 !important;
+
+  /* Custom overrides for fonts */
+  --font-sans: 'Lora', 'Georgia', serif !important;
+  font-family: 'Lora', 'Georgia', serif !important;
+}
+
+/* UI element text color corrections under nature theme */
+.theme-nature button,
+.theme-nature input,
+.theme-nature select,
+.theme-nature textarea,
+.theme-nature .font-mono,
+.theme-nature table {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
+}
+
+.theme-nature .font-mono {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Custom scrolling list scrollbar */

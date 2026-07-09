@@ -77,7 +77,7 @@ const App: React.FC = () => {
 
   // Settings tab form states
   const [refreshInterval, setRefreshInterval] = useState<number>(1000);
-  const [themeMode, setThemeMode] = useState<"dark" | "glass">("dark");
+  const [themeMode, setThemeMode] = useState<"dark" | "glass" | "nature">("dark");
   const [maxConcurrentTrades, setMaxConcurrentTrades] = useState<number>(3);
   const [defaultStrategy, setDefaultStrategy] = useState<string>("ORB");
   const [audioAlerts, setAudioAlerts] = useState<boolean>(true);
@@ -612,7 +612,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen ${themeMode === "glass" ? "bg-[#040810] bg-radial from-[#121c32] to-[#040810]" : "bg-[#070a13]"} text-slate-100 font-sans flex`}>
+    <div className={`min-h-screen ${themeMode === "nature" ? "theme-nature" : themeMode === "glass" ? "theme-glass" : "theme-dark"} ${themeMode === "glass" ? "bg-[#040810] bg-radial from-[#121c32] to-[#040810]" : "bg-slate-950"} text-slate-100 font-sans flex`}>
       
       {/* 1. LEFT PERMANENT SIDEBAR */}
       <aside className="w-64 border-r border-slate-900 bg-slate-950/80 backdrop-blur-md flex flex-col justify-between flex-shrink-0 z-30">
@@ -1627,6 +1627,7 @@ const App: React.FC = () => {
                   >
                     <option value="dark">Professional Slate Dark</option>
                     <option value="glass">Vibrant Glassmorphism Neon</option>
+                    <option value="nature">Organic Nature Beige</option>
                   </select>
                 </div>
 
