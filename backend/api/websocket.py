@@ -74,6 +74,11 @@ class WebSocketBroadcaster:
 
     def _build_update_message(self) -> Dict[str, Any]:
         """Assembles metrics, status, and ticks into a single JSON payload."""
+        # Direct fallback for live strategy telemetry streams
+        from core.live_runner import live_runner
+        if live_runner.active:
+            return live_runner.compile_telemetry_message()
+
         metrics = metrics_service.get_metrics()
         status = feed_manager.get_status()
         
@@ -98,7 +103,8 @@ class WebSocketBroadcaster:
             "type": "telemetry_pulse",
             "metrics": metrics,
             "status": status,
-            "latest_event": latest_event_data
+            "latest_event": latest_event_data,
+            "indices": live_runner.indices
         }
 
     async def _broadcast_loop(self) -> None:

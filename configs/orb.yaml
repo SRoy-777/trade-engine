@@ -31,5 +31,17 @@ enable_trailing_sl: false
 trailing_trigger_rr: 2.0
 trailing_step_rr: 0.5
 output_dir: "market_data/orb"
-start_date: "2023-07-07"
+start_date: "2026-05-01"
 end_date: "2026-07-06"
+
+# Allocation settings
+allocation_strategy: "SINGLE_STOCK" # SINGLE_STOCK or PERCENTAGE_RANKED
+allocation_weights: [0.50, 0.30, 0.20] # Weights for rank 1, rank 2, rank 3
+priority_ranking: [
+    "SBIN",
+    "BAJFINANCE",
+    "INFY",
+    "HDFCBANK",
+    "TATAMOTORS"
+  ]
+

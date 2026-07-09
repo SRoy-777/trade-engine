@@ -1,5 +1,14 @@
 import os
 import json
+import asyncio
+import yaml
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Force load .env relative to the backend directory before other imports are executed
+backend_dir = Path(__file__).resolve().parent
+load_dotenv(dotenv_path=backend_dir / ".env")
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +61,35 @@ async def lifespan(app: FastAPI):
     metrics_service.start()
     websocket_broadcaster.start()
     
+    # 7. Auto-start Live Strategy Runner with configs/orb.yaml values at startup
+    try:
+        config_path = "configs/orb.yaml"
+        if not os.path.exists(config_path) and os.path.exists(os.path.join("..", config_path)):
+            config_path = os.path.join("..", config_path)
+            
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                yaml_config = yaml.safe_load(f) or {}
+            
+            live_config = {
+                "symbols": yaml_config.get("symbols", ["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"]),
+                "priority_ranking": yaml_config.get("priority_ranking", ["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"]),
+                "allocation_strategy": yaml_config.get("allocation_strategy", "SINGLE_STOCK"),
+                "allocation_weights": yaml_config.get("allocation_weights", [0.5, 0.3, 0.2]),
+                "capital": yaml_config.get("capital", 100000.0),
+                "leverage": yaml_config.get("leverage", 5.0)
+            }
+            
+            def ui_broadcast(update_msg):
+                asyncio.create_task(websocket_broadcaster.send_to_all(update_msg))
+                
+            await live_runner.start(live_config, ui_broadcast)
+            logger.info("Automatically started Live Trading Runner with configurations from configs/orb.yaml")
+        else:
+            logger.warning(f"Could not find strategy config file for auto-start: {config_path}")
+    except Exception as auto_start_err:
+        logger.error(f"Error auto-starting Live Trading Runner: {auto_start_err}", exc_info=True)
+        
     logger.info("Trade Engine backend startup sequence completed.")
     
     yield
@@ -112,8 +150,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     await live_runner.start(value or {}, ui_broadcast)
                 elif action == "stop_live_strategy":
                     await live_runner.stop()
+                elif action == "update_strategy_config":
+                    live_runner.update_strategy_config(value or {})
             except Exception as parse_err:
-                logger.debug(f"Error handling websocket client packet: {parse_err}")
+                logger.error(f"Error handling websocket client packet: {parse_err}", exc_info=True)
                 
     except WebSocketDisconnect:
         await websocket_broadcaster.disconnect(websocket)

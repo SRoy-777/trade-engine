@@ -237,18 +237,32 @@ class ORBStrategy(BaseStrategy):
             return
 
         portfolio = self.manager.broker.get_portfolio() if self.manager else {}
-        current_cash = portfolio.get("cash_inr", self.capital_limit)
-        buying_power = current_cash * self.leverage
         
-        # Cap buying power by the risk controller's max capital per trade limit
-        max_allowed_val = self.capital_limit * self.leverage * 1.5
+        # Query manager for allocated capital based on ranking/allocation strategy
+        if self.manager and hasattr(self.manager, "get_allocated_capital"):
+            allocated_capital = self.manager.get_allocated_capital(self.symbol)
+        else:
+            allocated_capital = self.capital_limit
+
+        if allocated_capital <= 0:
+            dhan_logger.warning(f"[ORB] Entry Blocked: Zero capital allocated to {self.symbol} (strategy or rank restriction)")
+            return
+
+        buying_power = allocated_capital * self.leverage
+        
+        # Enforce actual available cash constraints from the main funds pool
+        available_cash = portfolio.get("cash_inr", 0.0)
+        max_broker_power = available_cash * self.leverage
+        buying_power = min(buying_power, max_broker_power)
+        
+        # Cap buying power by risk controller limits if present
         if self.manager and hasattr(self.manager, "risk_controller"):
             max_allowed_val = self.manager.risk_controller.max_capital_per_trade_inr
-        
-        buying_power = min(buying_power, max_allowed_val * 0.99)
+            buying_power = min(buying_power, max_allowed_val * 0.99)
         
         qty = int(buying_power / close_price)
         if qty <= 0:
+            dhan_logger.warning(f"[ORB] Entry Blocked: Calculated quantity is 0 for {self.symbol} (Price: {close_price}, Buying Power: {buying_power})")
             return
 
         # Calculate previous candle direction (t-1 Relative to entry trigger)

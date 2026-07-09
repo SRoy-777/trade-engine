@@ -16,8 +16,52 @@ class StrategyManager:
         # Registered strategies: strategy_id -> Strategy instance
         self.strategies: Dict[str, BaseStrategy] = {}
         
+        # Allocation Settings
+        self.allocation_strategy = "SINGLE_STOCK"  # "SINGLE_STOCK" or "PERCENTAGE_RANKED"
+        self.priority_ranking: List[str] = []
+        self.allocation_weights: List[float] = [0.50, 0.30, 0.20]
+        self.total_capital = 100000.0
+        
         # Register broker fill updates back to this manager
         self.broker.register_fill_callback(self._handle_broker_fill)
+
+    def update_allocation_config(self, config: Dict[str, Any]) -> None:
+        """Dynamically updates the allocation policy and priority rankings from front-end controls."""
+        if "allocation_strategy" in config:
+            self.allocation_strategy = str(config["allocation_strategy"]).upper()
+        if "priority_ranking" in config:
+            self.priority_ranking = list(config["priority_ranking"])
+        if "allocation_weights" in config:
+            self.allocation_weights = [float(w) for w in config["allocation_weights"]]
+        if "total_capital" in config:
+            self.total_capital = float(config["total_capital"])
+            
+        dhan_logger.info(
+            f"[Strategy Manager] Allocation config updated: Strategy={self.allocation_strategy}, "
+            f"Rankings={self.priority_ranking}, Weights={self.allocation_weights}, TotalCapital=₹{self.total_capital:,.2f}"
+        )
+
+    def get_allocated_capital(self, symbol: str) -> float:
+        """Returns the dynamic capital limit in INR for a given stock based on ranking rules."""
+        if self.allocation_strategy == "SINGLE_STOCK":
+            # Check if any OTHER strategy has an active trade open
+            for strat in self.strategies.values():
+                if strat.symbol != symbol and strat.active_trade is not None:
+                    return 0.0
+            return self.total_capital
+            
+        elif self.allocation_strategy == "PERCENTAGE_RANKED":
+            if symbol not in self.priority_ranking:
+                return 0.0
+            try:
+                rank_idx = self.priority_ranking.index(symbol)
+                if rank_idx < len(self.allocation_weights):
+                    return self.total_capital * self.allocation_weights[rank_idx]
+            except ValueError:
+                pass
+            return 0.0
+            
+        return 0.0
 
     def register_strategy(self, strategy: BaseStrategy) -> None:
         """Registers a new trading strategy to the manager."""
@@ -50,19 +94,40 @@ class StrategyManager:
         if not strategy:
             raise ValueError(f"Unknown strategy ID: {strategy_id}")
 
-        # Fetch current broker portfolio statistics for margin calculations
+        symbol = order_request["symbol"]
+        side = order_request["side"].upper()
         portfolio = self.broker.get_portfolio()
+        
+        # Determine if this is an opening position order (reductions/exits are always allowed)
+        current_pos_qty = portfolio.get("positions", {}).get(symbol, {}).get("qty", 0.0)
+        is_opening = True
+        if side == "SELL" and current_pos_qty > 0:
+            is_opening = False
+        elif side == "BUY" and current_pos_qty < 0:
+            is_opening = False
+
+        if is_opening:
+            # 1. Verify dynamic capital allocation limit
+            allocated = self.get_allocated_capital(symbol)
+            if allocated <= 0:
+                raise ValueError(f"Allocation block: Symbol {symbol} has no capital allocation under current priority configuration.")
+                
+            # 2. Verify Single Stock constraints
+            if self.allocation_strategy == "SINGLE_STOCK":
+                for strat in self.strategies.values():
+                    if strat.symbol != symbol and strat.active_trade is not None:
+                        raise ValueError(f"Allocation block: Single Stock rule active. Already in trade for {strat.symbol}.")
 
         try:
-            # 1. Pre-trade Risk Check Gate
+            # 3. Pre-trade Risk Check Gate
             self.risk_controller.validate_order(order_request, portfolio)
             
-            # 2. Submit to Broker
+            # 4. Submit to Broker
             order_id = await self.broker.submit_order(order_request)
             dhan_logger.info(f"Order processed: Strategy {strategy.name} submitted order {order_id}")
             
         except ValueError as risk_error:
-            dhan_logger.warning(f"Order Rejected: Risk validation failed: {risk_error}")
+            dhan_logger.warning(f"Order Rejected: Risk/Allocation validation failed: {risk_error}")
             # Raise exception up to strategy to handle rejection
             raise risk_error
 

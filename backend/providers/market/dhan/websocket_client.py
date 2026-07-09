@@ -18,7 +18,7 @@ class DhanWebSocketClient:
         self._ws_url = dhan_settings.WS_URL
         self._on_raw_packet_callback = on_raw_packet
         
-        self._ws: Optional[websockets.WebSocketClientProtocol] = None
+        self._ws: Optional[Any] = None
         self._is_active = False
         self._connection_status = ConnectionStatus(connected=False)
         self._client_task: Optional[asyncio.Task] = None
@@ -61,7 +61,7 @@ class DhanWebSocketClient:
             self._heartbeat_task = None
 
         # Send unsubscribe/disconnect packet if socket is active
-        if self._ws and self._ws.state == websockets.protocol.State.OPEN:
+        if self._ws and self._connection_status.connected:
             try:
                 # RequestCode 12 is Dhan client disconnection code
                 dhan_logger.info("Sending disconnect request frame to server")
@@ -100,11 +100,14 @@ class DhanWebSocketClient:
                 self._subscribed_instruments[request_code].add((exchange, sec_id))
 
         # Send subscription request immediately if connection is live
-        if self._ws and self._ws.state == websockets.protocol.State.OPEN:
+        if self._ws and self._connection_status.connected:
             await self._send_subscription(request_code, instruments)
 
     async def _send_subscription(self, request_code: int, instruments: List[Tuple[int, str]]) -> None:
         """Sends the JSON subscription frame to Dhan WebSocket in batches of 100."""
+        if not self._ws:
+            return
+
         # Mapping exchange segment numeric codes to string tags required by Dhan V2
         exch_map = {
             0: "IDX_I",
