@@ -17,8 +17,12 @@ class ORBStrategy(BaseStrategy):
     - Exits via static TP (based on Risk Reward ratio) or SL, or at Square-off time.
     """
     def __init__(self, config_path: str):
-        with open(config_path, "r") as f:
-            self.config = yaml.safe_load(f)
+        self.config = {}
+        try:
+            with open(config_path, "r") as f:
+                self.config = yaml.safe_load(f) or {}
+        except Exception:
+            pass
 
         self.strategy_id = "orb"
         name = "Opening Range Breakout Strategy"

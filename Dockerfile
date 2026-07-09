@@ -32,6 +32,9 @@ COPY --from=frontend-builder /app/frontend/dist ./static
 # Copy sample historical data
 COPY market_data/ ./market_data/
 
+# Copy configurations
+COPY configs/ ./configs/
+
 # Hugging Face Spaces runs on port 7860
 EXPOSE 7860
 ENV PORT=7860
