@@ -192,25 +192,24 @@ class LiveTradingRunner:
         # Dhan takes a brief moment to authenticate.
         await asyncio.sleep(1.0)
         
-        # Subscribe to mapped Dhan tokens (Quote - RequestCode 17)
-        instruments_quote = []
+        # Subscribe to all stocks and indices using Ticker mode (RequestCode 15)
+        # 1 = NSE_EQ segment for stocks, 0 = IDX_I segment for indices
+        instruments = []
         for sym in self.symbols:
             token = mappings.get(sym)
             if token:
-                instruments_quote.append((1, token))  # 1 = NSE_EQ segment
+                instruments.append((1, token))
                 logger.info(f"[Live Runner] Mapped {sym} to security token {token}")
             else:
                 logger.warning(f"[Live Runner] Unable to map security ID for stock symbol: {sym}")
                 
-        if instruments_quote:
-            await self.provider.subscribe(request_code=17, instruments=instruments_quote)
-            logger.info(f"[Live Runner] Subscribed stocks to Quote: {instruments_quote}")
-
-        # Subscribe to NIFTY 50 and BANK NIFTY indices (Ticker - RequestCode 15)
-        # Dhan index security IDs: Nifty 50 = "13", Bank Nifty = "25"
-        instruments_ticker = [(0, "13"), (0, "25")]
-        await self.provider.subscribe(request_code=15, instruments=instruments_ticker)
-        logger.info(f"[Live Runner] Subscribed indices to Ticker data: {instruments_ticker}")
+        # Add NIFTY 50 (13) and BANK NIFTY (25) index tokens
+        instruments.append((0, "13"))
+        instruments.append((0, "25"))
+        
+        if instruments:
+            await self.provider.subscribe(request_code=15, instruments=instruments)
+            logger.info(f"[Live Runner] Subscribed all instruments to Ticker data: {instruments}")
             
         # Start watchdog execution thread
         self._watchdog_task = asyncio.create_task(self.watchdog_loop())
