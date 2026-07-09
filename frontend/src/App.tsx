@@ -73,6 +73,7 @@ const App: React.FC = () => {
   const [leverage, setLeverage] = useState<number>(5);
   const [allocationStrategy, setAllocationStrategy] = useState<"SINGLE_STOCK" | "PERCENTAGE_RANKED">("SINGLE_STOCK");
   const [weights, setWeights] = useState<number[]>([0.5, 0.3, 0.2]);
+  const [enableLiveStocks, setEnableLiveStocks] = useState<boolean>(false);
 
   // Settings tab form states
   const [refreshInterval, setRefreshInterval] = useState<number>(1000);
@@ -90,6 +91,7 @@ const App: React.FC = () => {
       setLeverage(strategyConfig.leverage);
       setAllocationStrategy(strategyConfig.allocation_strategy as "SINGLE_STOCK" | "PERCENTAGE_RANKED");
       setWeights(strategyConfig.allocation_weights);
+      setEnableLiveStocks(strategyConfig.enable_live_stocks || false);
     }
   }, [strategyConfig]);
 
@@ -235,7 +237,8 @@ const App: React.FC = () => {
       leverage,
       priorityRanking,
       allocationStrategy,
-      weights
+      weights,
+      enableLiveStocks
     );
     addToast("Live Intraday Paper Trade Runner Initiated", "success");
   };
@@ -602,8 +605,9 @@ const App: React.FC = () => {
       capital: capital,
       leverage: leverage,
       allocation_strategy: allocationStrategy,
-      allocation_weights: weights
-    });
+      allocation_weights: weights,
+      enable_live_stocks: enableLiveStocks
+    } as any);
     addToast("Global strategy settings persisted back to configs/orb.yaml", "success");
   };
 
@@ -1518,7 +1522,9 @@ const App: React.FC = () => {
                       <tr key={sym} className="hover:bg-slate-900/30 text-slate-300">
                         <td className="p-4 font-black text-white text-sm">{sym}</td>
                         <td className="p-4">
-                          {hasWarning ? (
+                          {s?.offline ? (
+                            <span className="text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded font-black uppercase">Offline</span>
+                          ) : hasWarning ? (
                             <span className="text-[9px] bg-rose-500/10 text-rose-450 border border-rose-500/20 px-2 py-0.5 rounded font-black uppercase">No Feed</span>
                           ) : s?.active_trade ? (
                             <span className="text-[9px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded font-black uppercase">In Trade</span>
@@ -1530,10 +1536,34 @@ const App: React.FC = () => {
                             <span className="text-[9px] bg-slate-950 text-slate-650 px-2 py-0.5 rounded font-black uppercase">Inactive</span>
                           )}
                         </td>
-                        <td className="p-4 font-mono">₹{s?.open ? s.open.toFixed(2) : "0.00"}</td>
-                        <td className="p-4 font-mono text-emerald-400">₹{s?.high ? s.high.toFixed(2) : "0.00"}</td>
-                        <td className="p-4 font-mono text-rose-450">₹{s?.low ? s.low.toFixed(2) : "0.00"}</td>
-                        <td className="p-4 font-mono font-black text-white">₹{s?.last_ltp ? s.last_ltp.toFixed(2) : "0.00"}</td>
+                        <td className="p-4 font-mono">
+                          {s?.offline ? (
+                            <span className="text-slate-500 font-bold uppercase tracking-widest text-[9px]">Offline</span>
+                          ) : (
+                            `₹${s?.open ? s.open.toFixed(2) : "0.00"}`
+                          )}
+                        </td>
+                        <td className="p-4 font-mono text-emerald-400">
+                          {s?.offline ? (
+                            <span className="text-slate-500 font-bold uppercase tracking-widest text-[9px]">Offline</span>
+                          ) : (
+                            `₹${s?.high ? s.high.toFixed(2) : "0.00"}`
+                          )}
+                        </td>
+                        <td className="p-4 font-mono text-rose-450">
+                          {s?.offline ? (
+                            <span className="text-slate-500 font-bold uppercase tracking-widest text-[9px]">Offline</span>
+                          ) : (
+                            `₹${s?.low ? s.low.toFixed(2) : "0.00"}`
+                          )}
+                        </td>
+                        <td className="p-4 font-mono font-black text-white">
+                          {s?.offline ? (
+                            <span className="text-slate-500 font-bold uppercase tracking-widest text-[9px]">Offline</span>
+                          ) : (
+                            `₹${s?.last_ltp ? s.last_ltp.toFixed(2) : "0.00"}`
+                          )}
+                        </td>
                         <td className="p-4 font-mono text-slate-500">₹{s?.close ? s.close.toFixed(2) : "0.00"}</td>
                         <td className="p-4 font-mono text-slate-400">{s?.volume ? s.volume.toLocaleString() : "0"}</td>
                         <td className={`p-4 font-mono font-black ${changePct >= 0 ? "text-emerald-400" : "text-rose-450"}`}>
@@ -1598,6 +1628,23 @@ const App: React.FC = () => {
                     <option value="dark">Professional Slate Dark</option>
                     <option value="glass">Vibrant Glassmorphism Neon</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">Live Stock Feeds (Dhan Data API)</label>
+                  <div className="flex items-center mt-2">
+                    <input 
+                      type="checkbox"
+                      id="enableLiveStocks"
+                      checked={enableLiveStocks}
+                      onChange={e => setEnableLiveStocks(e.target.checked)}
+                      className="w-4.5 h-4.5 rounded bg-slate-950 border border-slate-850 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
+                    />
+                    <label htmlFor="enableLiveStocks" className="ml-2 text-xs text-slate-300 cursor-pointer">
+                      Enable Live Stock Feeds
+                    </label>
+                  </div>
+                  <span className="text-[9px] text-slate-500 mt-1 block">Requires manual activation of ₹499/mo Data API on Dhan portal. If disabled, index feeds (Nifty/Bank Nifty) stream for free.</span>
                 </div>
 
                 <div>

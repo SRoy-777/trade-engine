@@ -58,6 +58,7 @@ export interface SymbolStatusDetail {
   is_active: boolean;
   warning: boolean;
   last_ltp: number;
+  offline?: boolean;
   open?: number;
   high?: number;
   low?: number;
@@ -93,6 +94,7 @@ export interface StrategyConfig {
   allocation_weights: number[];
   capital: number;
   leverage: number;
+  enable_live_stocks?: boolean;
 }
 
 export interface TradeHistoryRecord {
@@ -251,7 +253,8 @@ export function useWebSocket(overrideUrl?: string) {
     leverage: number,
     priorityRanking: string[],
     allocationStrategy: string,
-    allocationWeights: number[]
+    allocationWeights: number[],
+    enableLiveStocks: boolean
   ) => {
     sendAction("start_live_strategy", {
       symbols,
@@ -259,7 +262,8 @@ export function useWebSocket(overrideUrl?: string) {
       leverage,
       priority_ranking: priorityRanking,
       allocation_strategy: allocationStrategy,
-      allocation_weights: allocationWeights
+      allocation_weights: allocationWeights,
+      enable_live_stocks: enableLiveStocks
     });
   }, [sendAction]);
 

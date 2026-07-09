@@ -43,6 +43,7 @@ class LiveTradingRunner:
         self.last_ohlc: Dict[str, Dict[str, Any]] = {}
         self.warning_symbols: List[str] = []
         self.connection_ok = True
+        self.enable_live_stocks = False
         self._watchdog_task: Optional[asyncio.Task] = None
 
     def _load_symbol_mappings(self) -> Dict[str, str]:
@@ -195,15 +196,23 @@ class LiveTradingRunner:
         # Subscribe to all stocks and indices using Ticker mode (RequestCode 15)
         # 1 = NSE_EQ segment for stocks, 0 = IDX_I segment for indices
         instruments = []
-        for sym in self.symbols:
-            token = mappings.get(sym)
-            if token:
-                instruments.append((1, token))
-                logger.info(f"[Live Runner] Mapped {sym} to security token {token}")
-            else:
-                logger.warning(f"[Live Runner] Unable to map security ID for stock symbol: {sym}")
+        
+        # Only subscribe to stocks if user explicitly enables live stock feed (requires paid Dhan Data API)
+        enable_live_stocks = config.get("enable_live_stocks", False)
+        self.enable_live_stocks = enable_live_stocks
+        
+        if enable_live_stocks:
+            for sym in self.symbols:
+                token = mappings.get(sym)
+                if token:
+                    instruments.append((1, token))
+                    logger.info(f"[Live Runner] Mapped {sym} to security token {token}")
+                else:
+                    logger.warning(f"[Live Runner] Unable to map security ID for stock symbol: {sym}")
+        else:
+            logger.info("[Live Runner] Live stock subscriptions disabled. Index tracking only. (Set enable_live_stocks: true in config if you have Dhan Data API)")
                 
-        # Add NIFTY 50 (13) and BANK NIFTY (25) index tokens
+        # Add NIFTY 50 (13) and BANK NIFTY (25) index tokens (always enabled)
         instruments.append((0, "13"))
         instruments.append((0, "25"))
         
@@ -362,6 +371,7 @@ class LiveTradingRunner:
                     "is_active": strat.is_active,
                     "warning": sym in self.warning_symbols,
                     "last_ltp": self.broker._last_prices.get(sym, 0.0),
+                    "offline": not self.enable_live_stocks,
                     "open": ohlc.get("open", 0.0),
                     "high": ohlc.get("high", 0.0),
                     "low": ohlc.get("low", 0.0),
