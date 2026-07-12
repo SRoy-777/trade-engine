@@ -364,6 +364,15 @@ async def run_simulation():
     tp_pnl = sum(t["Net_PnL"] for t in master_trades if t.get("Exit_Reason") == "Take Profit")
     so_pnl = sum(t["Net_PnL"] for t in master_trades if t.get("Exit_Reason") == "Square Off")
 
+    # Aggregate filter block counters from all strategies
+    total_blocked_nifty = 0
+    total_blocked_range = 0
+    total_blocked_wick = 0
+    for strat in manager.strategies.values():
+        total_blocked_nifty += getattr(strat, "blocked_by_nifty_count", 0)
+        total_blocked_range += getattr(strat, "blocked_by_range_count", 0)
+        total_blocked_wick += getattr(strat, "blocked_by_wick_count", 0)
+
     perf_summary = {
         "Total Portfolio Capital (INR)": capital,
         "Total Trades": total_trades,
@@ -388,7 +397,10 @@ async def run_simulation():
         "Trades Closed by Square Off": so_count,
         "Net P&L from Stop Loss (INR)": sl_pnl,
         "Net P&L from Take Profit (INR)": tp_pnl,
-        "Net P&L from Square Off (INR)": so_pnl
+        "Net P&L from Square Off (INR)": so_pnl,
+        "Blocked by Nifty Filter": total_blocked_nifty,
+        "Blocked by Opening Range Filter": total_blocked_range,
+        "Blocked by Wick Rejection Filter": total_blocked_wick
     }
 
     # Save summary

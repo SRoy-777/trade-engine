@@ -51,6 +51,11 @@ class ORBStrategy(BaseStrategy):
         self.enable_nifty_filter = bool(self.config.get("enable_nifty_filter", False))
         self.max_breakout_wick_pct = float(self.config.get("max_breakout_wick_pct", 0.0))
 
+        # Block counters for metrics tracking
+        self.blocked_by_nifty_count = 0
+        self.blocked_by_range_count = 0
+        self.blocked_by_wick_count = 0
+
         # Parse times
         self.square_off_time = datetime.strptime(self.square_off_str, "%H:%M").time()
         self.entry_start_time = datetime.strptime(self.entry_start_str, "%H:%M").time()
@@ -241,6 +246,7 @@ class ORBStrategy(BaseStrategy):
                 range_width = self.curr_day_high - self.curr_day_low
                 range_pct = (range_width / self.curr_day_low) * 100.0
                 if range_pct > self.max_opening_range_pct:
+                    self.blocked_by_range_count += 1
                     return
 
             # 2. Breakout candle wick check (Close Near Extremes)
@@ -248,10 +254,12 @@ class ORBStrategy(BaseStrategy):
                 if long_breakout:
                     wick_fraction = (packet.high - packet.close) / (packet.high - packet.low)
                     if wick_fraction > self.max_breakout_wick_pct:
+                        self.blocked_by_wick_count += 1
                         return
                 elif short_breakout:
                     wick_fraction = (packet.close - packet.low) / (packet.high - packet.low)
                     if wick_fraction > self.max_breakout_wick_pct:
+                        self.blocked_by_wick_count += 1
                         return
 
             # 3. Nifty Trend filter check
@@ -260,8 +268,10 @@ class ORBStrategy(BaseStrategy):
                 if nifty and nifty.get("ltp", 0.0) > 0.0 and nifty.get("open", 0.0) > 0.0:
                     nifty_bullish = nifty["ltp"] >= nifty["open"]
                     if long_breakout and not nifty_bullish:
+                        self.blocked_by_nifty_count += 1
                         return
                     if short_breakout and nifty_bullish:
+                        self.blocked_by_nifty_count += 1
                         return
 
             side = "BUY" if long_breakout else "SELL"
