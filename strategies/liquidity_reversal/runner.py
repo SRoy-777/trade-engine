@@ -16,8 +16,8 @@ if str(backend_dir) not in sys.path:
 from core.broker.paper import PaperBroker, SimulationConfig
 from core.risk.controller import RiskController
 from core.strategy.manager import StrategyManager
-from strategy import LiquidityReversalStrategy
-from reports import save_individual_reports, generate_consolidated_reports
+from strategies.liquidity_reversal.strategy import LiquidityReversalStrategy
+from strategies.liquidity_reversal.reports import save_individual_reports, generate_consolidated_reports
 from providers.market.dhan.models import MarketPacket
 
 async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict, start_dt: date, end_dt: date, years_duration: float) -> tuple:
@@ -94,8 +94,9 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
 
     daily_equity = []
     last_logged_date = None
+    ts = rows[0]["datetime_parsed"]
 
-    # Ingestion loop
+    # Ingestion simulation
     for idx, r in enumerate(rows):
         ts = r["datetime_parsed"]
         packet = MarketPacket(

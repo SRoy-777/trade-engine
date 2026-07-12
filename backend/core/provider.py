@@ -48,6 +48,10 @@ class BaseMarketProvider(ABC):
         """Dynamically updates the playback speed multiplier."""
         pass
 
+    async def step(self) -> None:
+        """Advances the feed by 1 tick (only applicable in replay mode)."""
+        pass
+
     @abstractmethod
     def get_status(self) -> Dict[str, Any]:
         """Returns diagnostic details and telemetry from the provider."""

@@ -47,23 +47,17 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
     capital = float(config.get("capital", 60000.0))
     leverage = float(config.get("leverage", 5.0))
     
-    # Try different suffixes for historical files
+    # Try different suffixes for historical files recursively
     history_dir = backend_dir.parent / "market_data" / "history"
-    csv_paths = [
-        history_dir / f"{symbol}_3y_5m.csv",
-        history_dir / f"{symbol}_3y_5min.csv",
-        history_dir / f"{symbol}_180d.csv",
-        history_dir / f"{symbol}_180d_5min.csv"
-    ]
-    
     csv_path = None
-    for p in csv_paths:
-        if p.exists():
-            csv_path = p
+    for suffix in [f"{symbol}_3y_5m.csv", f"{symbol}_3y_5min.csv", f"{symbol}_180d.csv", f"{symbol}_180d_5min.csv"]:
+        found = list(history_dir.glob(f"**/{suffix}"))
+        if found:
+            csv_path = found[0]
             break
             
     if not csv_path:
-        print(f"  [SKIPPED] Historical data not found for {symbol} (checked suffixes 3y_5m, 3y_5min, 180d)")
+        print(f"  [SKIPPED] Historical data not found recursively for {symbol} (checked suffixes 3y_5m, 3y_5min, 180d)")
         return [], []
 
     print(f"  [RUNNING] Backtest for {symbol} using {csv_path.name}...")
@@ -118,6 +112,7 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
 
     daily_equity = []
     last_logged_date = None
+    ts = rows[-1]["datetime_parsed"]
 
     # Process ticks
     for idx, r in enumerate(rows):
@@ -253,7 +248,18 @@ async def run_simulation():
     if isinstance(config_symbols, list):
         symbols = config_symbols
     elif isinstance(config_symbols, str):
-        if config_symbols.upper() == "ALL":
+        if config_symbols.endswith(".xlsx"):
+            xlsx_path = backend_dir.parent / config_symbols
+            if not xlsx_path.exists():
+                xlsx_path = Path(config_symbols)
+            try:
+                df = pd.read_excel(xlsx_path, header=None)
+                symbols = df[0].dropna().astype(str).str.strip().tolist()
+                symbols = [sym.upper() for sym in symbols if sym]
+            except Exception as e:
+                print(f"Error loading symbols from excel {xlsx_path}: {e}")
+                symbols = []
+        elif config_symbols.upper() == "ALL":
             nifty_csv_path = backend_dir.parent / "market_data" / "nifty50_security_ids.csv"
             if nifty_csv_path.exists():
                 with open(nifty_csv_path, mode="r", encoding="utf-8") as f:
@@ -443,6 +449,7 @@ async def run_simulation():
             print(f"  {k:<35} : {v}")
     print("==================================================")
     print(f"Master files saved to: {output_dir}")
+    print(f"Stocks backtested = {len(all_daily_equities)}")
 
 if __name__ == "__main__":
     asyncio.run(run_simulation())

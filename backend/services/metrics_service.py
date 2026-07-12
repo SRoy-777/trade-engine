@@ -1,5 +1,6 @@
 import asyncio
 import time
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from market_feed.manager import feed_manager
 from event_bus.event_bus import event_bus
@@ -75,7 +76,7 @@ class MetricsService:
                 event_time = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
                 # Remove timezone offset for utc comparison
                 event_time_utc = event_time.replace(tzinfo=None)
-                replay_delay_secs = (datetime.utcnow() - event_time_utc).total_seconds()
+                replay_delay_secs = (datetime.now(timezone.utc).replace(tzinfo=None) - event_time_utc).total_seconds()
             except Exception:
                 pass
 

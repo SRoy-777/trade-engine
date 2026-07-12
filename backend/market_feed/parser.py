@@ -1,7 +1,7 @@
 import json
 import uuid
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from models.market import RawPacket, MarketEvent
 from utils.logger_setup import logger
@@ -38,7 +38,7 @@ class PacketParser:
                 correlation_id=packet.packet_id,
                 exchange_timestamp=exchange_ts,
                 received_timestamp=packet.received_timestamp,
-                processed_timestamp=datetime.utcnow(),
+                processed_timestamp=datetime.now(timezone.utc),
                 symbol=data.get("symbol", "UNKNOWN"),
                 ltp=float(data.get("ltp", 0.0)),
                 open=float(data.get("open", 0.0)),

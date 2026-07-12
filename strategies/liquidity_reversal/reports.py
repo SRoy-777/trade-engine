@@ -3,7 +3,7 @@ import csv
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
 
 def safe_to_csv(df: pd.DataFrame, path: Path):
     import time
@@ -102,7 +102,7 @@ def save_individual_reports(symbol: str, trades: list, daily_equity: list, initi
     }
     pd.DataFrame(list(perf_summary.items()), columns=["Metric", "Value"]).to_csv(output_dir / "performance_summary.csv", index=False)
 
-def generate_consolidated_reports(all_trades: list, all_daily_equities: dict, capital: float, output_dir: Path, start_dt: datetime.date, end_dt: datetime.date):
+def generate_consolidated_reports(all_trades: list, all_daily_equities: dict, capital: float, output_dir: Path, start_dt: date, end_dt: date):
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Duration in years

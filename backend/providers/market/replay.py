@@ -2,7 +2,7 @@ import asyncio
 import uuid
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Awaitable, Dict, Any, Optional
 from core.provider import BaseMarketProvider
 from core.replay_source import ReplaySource
@@ -210,7 +210,7 @@ class ReplayProvider(BaseMarketProvider):
 
                 # Package dictionary into RawPacket schema
                 packet_id = str(uuid.uuid4())
-                received_ts = datetime.utcnow()
+                received_ts = datetime.now(timezone.utc)
                 
                 # Payload carries raw values exactly as received from broker
                 payload_str = json.dumps(tick)

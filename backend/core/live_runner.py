@@ -82,7 +82,8 @@ class LiveTradingRunner:
         
         # 1. Parse and extract configuration parameters
         self.symbols = [s.strip().upper() for s in config.get("symbols", ["SBIN", "BAJFINANCE", "INFY"])]
-        self.priority_ranking = [s.strip().upper() for s in config.get("priority_ranking", self.symbols)]
+        raw_priority = config.get("priority_ranking", self.symbols)
+        self.priority_ranking = [s.strip().upper() for s in raw_priority if s.strip().upper() in self.symbols]
         self.allocation_strategy = config.get("allocation_strategy", "SINGLE_STOCK").upper()
         self.allocation_weights = [float(w) for w in config.get("allocation_weights", [0.50, 0.30, 0.20])]
         self.capital = float(config.get("capital", 100000.0))
@@ -227,7 +228,7 @@ class LiveTradingRunner:
     def update_strategy_config(self, config: Dict[str, Any]) -> None:
         """Dynamically updates rankings, weights, and strategies in real-time."""
         if "priority_ranking" in config:
-            self.priority_ranking = [s.strip().upper() for s in config["priority_ranking"]]
+            self.priority_ranking = [s.strip().upper() for s in config["priority_ranking"] if s.strip().upper() in self.symbols]
         if "allocation_strategy" in config:
             self.allocation_strategy = str(config["allocation_strategy"]).upper()
         if "allocation_weights" in config:
@@ -263,7 +264,11 @@ class LiveTradingRunner:
                     current_config = yaml.safe_load(f) or {}
             
             current_config["enable_live_stocks"] = self.enable_live_stocks
-            current_config["symbols"] = self.symbols
+            # Keep Excel filename reference if symbols is configured to point to it on disk
+            if isinstance(current_config.get("symbols"), str) and current_config["symbols"].endswith(".xlsx"):
+                pass
+            else:
+                current_config["symbols"] = self.symbols
             current_config["priority_ranking"] = self.priority_ranking
             current_config["allocation_strategy"] = self.allocation_strategy
             current_config["allocation_weights"] = self.allocation_weights
@@ -375,7 +380,7 @@ class LiveTradingRunner:
                     "active_trade_detail": strat.active_trade,
                     "is_active": strat.is_active,
                     "warning": sym in self.warning_symbols,
-                    "last_ltp": self.broker._last_prices.get(sym, 0.0),
+                    "last_ltp": self.broker._last_prices.get(sym, 0.0) if self.broker else 0.0,
                     "offline": not self.enable_live_stocks,
                     "open": ohlc.get("open", 0.0),
                     "high": ohlc.get("high", 0.0),

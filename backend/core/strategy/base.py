@@ -18,6 +18,10 @@ class BaseStrategy(ABC):
         self.positions: Dict[str, Dict[str, float]] = {}
         self.total_realized_pnl: float = 0.0
         
+        # Central properties assumed by the manager
+        self.symbol: Optional[str] = symbols[0] if symbols else None
+        self.active_trade: Optional[Dict[str, Any]] = None
+        
         # Reference to strategy manager or risk controller to submit orders
         self.manager: Optional[Any] = None
 

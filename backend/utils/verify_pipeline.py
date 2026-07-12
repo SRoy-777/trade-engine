@@ -2,7 +2,7 @@ import asyncio
 import os
 import shutil
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import pyarrow.parquet as pq
 import duckdb
 
@@ -38,9 +38,9 @@ async def test_priority_bus():
     test_event = MarketEvent(
         event_id="test-evt-id",
         correlation_id="test-corr-id",
-        exchange_timestamp=datetime.utcnow(),
-        received_timestamp=datetime.utcnow(),
-        processed_timestamp=datetime.utcnow(),
+        exchange_timestamp=datetime.now(timezone.utc),
+        received_timestamp=datetime.now(timezone.utc),
+        processed_timestamp=datetime.now(timezone.utc),
         symbol="TEST",
         ltp=100.0,
         open=100.0,
@@ -137,12 +137,14 @@ async def main():
 
     # Verify Silver DuckDB Output
     conn = duckdb.connect(test_db)
-    duckdb_count = conn.execute("SELECT COUNT(*) FROM silver_market_events").fetchone()[0]
+    res = conn.execute("SELECT COUNT(*) FROM silver_market_events").fetchone()
+    duckdb_count = res[0] if res else 0
     logger.info(f"✓ Silver Storage Verification: DuckDB table contains {duckdb_count} market events")
     
     if duckdb_count > 0:
         sample_row = conn.execute("SELECT event_id, symbol, ltp, processed_timestamp FROM silver_market_events LIMIT 1").fetchone()
-        logger.info(f"  First DuckDB row sample: Event ID={sample_row[0]}, Ticker={sample_row[1]}, Price={sample_row[2]}, Ingest Time={sample_row[3]}")
+        if sample_row:
+            logger.info(f"  First DuckDB row sample: Event ID={sample_row[0]}, Ticker={sample_row[1]}, Price={sample_row[2]}, Ingest Time={sample_row[3]}")
         
     conn.close()
 

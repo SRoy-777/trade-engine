@@ -72,7 +72,7 @@ class CSVHistoricalProvider(HistoricalDataProvider):
                 
                 # Check symbol if present
                 row_symbol = row.get("symbol")
-                if row_symbol and row_symbol.upper() != self._symbol.upper():
+                if self._symbol and row_symbol and row_symbol.upper() != self._symbol.upper():
                     continue
 
                 # Parse timestamp
@@ -195,7 +195,7 @@ class ParquetHistoricalProvider(HistoricalDataProvider):
             
             # Filter symbol if present
             row_symbol = row.get("symbol")
-            if row_symbol and row_symbol.upper() != self._symbol.upper():
+            if self._symbol and row_symbol and row_symbol.upper() != self._symbol.upper():
                 continue
                 
             # Parse timestamp

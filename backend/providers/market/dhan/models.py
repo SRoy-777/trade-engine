@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from pydantic import BaseModel, Field
 
 class RawPacket(BaseModel):
     """Container for raw incoming WebSocket bytes."""
     data: bytes
-    received_at: datetime = Field(default_factory=datetime.utcnow)
+    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class MarketPacket(BaseModel):
     """Standardised parsed live market data tick."""
@@ -41,4 +41,4 @@ class ConnectionStatus(BaseModel):
 
 class Heartbeat(BaseModel):
     """Heartbeat container."""
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

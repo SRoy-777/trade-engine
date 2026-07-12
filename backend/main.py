@@ -71,9 +71,32 @@ async def lifespan(app: FastAPI):
             with open(config_path, "r") as f:
                 yaml_config = yaml.safe_load(f) or {}
             
+            raw_symbols = yaml_config.get("symbols", ["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"])
+            resolved_symbols = raw_symbols
+            if isinstance(raw_symbols, str) and raw_symbols.endswith(".xlsx"):
+                import pandas as pd
+                xlsx_path = os.path.join(os.path.dirname(config_path), "..", raw_symbols)
+                if not os.path.exists(xlsx_path):
+                    xlsx_path = raw_symbols
+                if not os.path.exists(xlsx_path):
+                    xlsx_path = os.path.join("backend", raw_symbols)
+                try:
+                    df = pd.read_excel(xlsx_path, header=None)
+                    resolved_symbols = df[0].dropna().astype(str).str.strip().tolist()
+                    resolved_symbols = [s.upper() for s in resolved_symbols if s]
+                except Exception as e:
+                    logger.error(f"Error loading symbols from excel {xlsx_path}: {e}")
+                    resolved_symbols = ["SBIN"]
+            
+            raw_priority = yaml_config.get("priority_ranking", resolved_symbols)
+            if isinstance(raw_priority, list):
+                priority_ranking = [s.strip().upper() for s in raw_priority if s.strip().upper() in resolved_symbols]
+            else:
+                priority_ranking = resolved_symbols
+
             live_config = {
-                "symbols": yaml_config.get("symbols", ["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"]),
-                "priority_ranking": yaml_config.get("priority_ranking", ["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"]),
+                "symbols": resolved_symbols,
+                "priority_ranking": priority_ranking,
                 "allocation_strategy": yaml_config.get("allocation_strategy", "SINGLE_STOCK"),
                 "allocation_weights": yaml_config.get("allocation_weights", [0.5, 0.3, 0.2]),
                 "capital": yaml_config.get("capital", 100000.0),

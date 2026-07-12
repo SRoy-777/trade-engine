@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Awaitable, List, Dict, Any, Optional, Set, Tuple
 import websockets
 from providers.market.dhan.config import dhan_settings
@@ -185,7 +185,7 @@ class DhanWebSocketClient:
                 ) as ws:
                     self._ws = ws
                     self._connection_status.connected = True
-                    self._connection_status.last_connected_at = datetime.utcnow()
+                    self._connection_status.last_connected_at = datetime.now(timezone.utc)
                     self._connection_status.current_mode = "CONNECTED"
                     
                     dhan_logger.info("Authentication Successful")

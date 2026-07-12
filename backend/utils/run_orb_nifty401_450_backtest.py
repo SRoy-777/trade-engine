@@ -47,8 +47,8 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
     capital = float(config.get("capital", 60000.0))
     leverage = float(config.get("leverage", 5.0))
     
-    # Locate data file in Next 50 historical directory
-    history_dir = backend_dir.parent / "market_data" / "history" / "next_50"
+    # Locate data file in nifty_401-450 historical directory
+    history_dir = backend_dir.parent / "market_data" / "history" / "nifty_401-450"
     csv_paths = [
         history_dir / f"{symbol}_3y_5m.csv",
         history_dir / f"{symbol}_3y_5min.csv"
@@ -61,7 +61,7 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
             break
             
     if not csv_path:
-        print(f"  [SKIPPED] Historical data not found for {symbol} in next_50 folder")
+        print(f"  [SKIPPED] Historical data not found for {symbol} in nifty_401-450 folder")
         return [], []
 
     print(f"  [RUNNING] Backtest for {symbol} using {csv_path.name}...")
@@ -179,8 +179,8 @@ async def run_single_stock_backtest(symbol: str, config_path: Path, config: dict
             "Cash": portfolio["cash_inr"]
         })
 
-    # Individual stock output goes to individual_next_50 subfolder
-    individual_output_dir = backend_dir.parent / "market_data" / "orb" / "individual_next_50" / symbol
+    # Individual stock output goes to nifty_401-450 subfolder
+    individual_output_dir = backend_dir.parent / "market_data" / "orb" / "nifty_401-450" / symbol
     await compile_and_save_individual_reports(strategy, daily_equity, capital, individual_output_dir)
 
     print(f"  [COMPLETED] {symbol} backtest. Trades: {len(strategy.trade_history)}, Final NAV: Rs. {portfolio['net_asset_value_inr']:.2f}")
@@ -233,11 +233,14 @@ async def compile_and_save_individual_reports(strategy: ORBStrategy, daily_equit
     safe_to_csv(pd.DataFrame(monthly_ret), output_dir / "monthly_returns.csv")
 
 async def run_simulation():
-    config_path = backend_dir.parent / "configs" / "orb_next50.yaml"
+    import logging
+    logging.disable(logging.INFO)
+
+    config_path = backend_dir.parent / "configs" / "orb_nifty_401_450.yaml"
 
     print(f"Loading ORB config from: {config_path}")
     if not config_path.exists():
-        print(f"Error: ORB Next 50 config not found at {config_path}")
+        print(f"Error: ORB Nifty 401-450 config not found at {config_path}")
         return
 
     with open(config_path, "r") as f:
@@ -251,23 +254,21 @@ async def run_simulation():
         symbols = config_symbols
     elif isinstance(config_symbols, str):
         if config_symbols.upper() == "ALL":
-            nifty_csv_path = backend_dir.parent / "market_data" / "niftynext50_security_ids.csv"
+            nifty_csv_path = backend_dir.parent / "market_data" / "nifty401_450_security_ids.csv"
             if nifty_csv_path.exists():
                 with open(nifty_csv_path, mode="r", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     symbols = [row["symbol"] for row in reader]
-            else:
-                symbols = ["ABB"]
         else:
             symbols = [config_symbols]
             
     capital = float(config.get("capital", 60000.0))
-    start_date_str = config.get("start_date", "2023-07-07")
+    start_date_str = config.get("start_date", "2023-03-01")
     end_date_str = config.get("end_date", "2026-07-06")
     start_dt = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_dt = datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
-    print(f"Running simulation for {len(symbols)} Next 50 symbols from {start_dt} to {end_dt}...")
+    print(f"Running simulation for {len(symbols)} Nifty 401-450 symbols from {start_dt} to {end_dt}...")
     
     master_trades = []
     all_daily_equities = {}
@@ -284,7 +285,7 @@ async def run_simulation():
         return
 
     # Consolidate Daily Equity Curve
-    print("\nConsolidating daily equity across all Next 50 symbols...")
+    print("\nConsolidating daily equity across all Nifty 401-450 symbols...")
     unique_dates = set()
     for symbol, de_list in all_daily_equities.items():
         for item in de_list:
@@ -317,8 +318,8 @@ async def run_simulation():
         
     master_equity_df = pd.DataFrame(master_daily_equity)
     
-    # Output dir for Next 50 consolidated reports: market_data/orb/nifty_next_50/
-    output_dir = backend_dir.parent / "market_data" / "orb" / "nifty_next_50"
+    # Output dir for nifty_401-450 consolidated reports
+    output_dir = backend_dir.parent / "market_data" / "orb" / "nifty_401-450"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     safe_to_csv(master_equity_df, output_dir / "master_equity_curve.csv")
@@ -426,16 +427,10 @@ async def run_simulation():
     # Save summary
     pd.DataFrame(list(perf_summary.items()), columns=["Metric", "Value"]).to_csv(output_dir / "master_performance_summary.csv", index=False)
 
-    print("==================================================")
-    print("   MASTER NEXT 50 CONSOLIDATED PERFORMANCE REPORT")
-    print("==================================================")
+    # Print in tab-separated style
+    print("Metric\tValue")
     for k, v in perf_summary.items():
-        if isinstance(v, float):
-            print(f"  {k:<35} : {v:.2f}")
-        else:
-            print(f"  {k:<35} : {v}")
-    print("==================================================")
-    print(f"Master files saved to: {output_dir}")
+        print(f"{k}\t{v}")
 
 if __name__ == "__main__":
     asyncio.run(run_simulation())

@@ -1,12 +1,12 @@
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from providers.market.dhan.config import dhan_settings
 
 class DhanJSONFormatter(logging.Formatter):
     def format(self, record):
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
             "module": record.module,
             "log_level": record.levelname,
             "event": record.getMessage()

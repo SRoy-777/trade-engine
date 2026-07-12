@@ -1,5 +1,5 @@
 import struct
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from providers.market.dhan.exceptions import DhanParserException
 from providers.market.dhan.models import MarketPacket
@@ -66,7 +66,7 @@ class DhanPacketParser:
                 exchange_segment=EXCHANGE_SEGMENTS.get(exchange_code, f"UNKNOWN_{exchange_code}"),
                 security_id=sec_id,
                 ltp=ltp,
-                timestamp=datetime.fromtimestamp(ltt_epoch) if ltt_epoch > 0 else datetime.utcnow(),
+                timestamp=datetime.fromtimestamp(ltt_epoch) if ltt_epoch > 0 else datetime.now(timezone.utc).replace(tzinfo=None),
                 raw_fields={"ltt_epoch": ltt_epoch}
             )
         except Exception as e:
@@ -100,7 +100,7 @@ class DhanPacketParser:
                 security_id=sec_id,
                 ltp=ltp,
                 volume=volume,
-                timestamp=datetime.fromtimestamp(ltt_epoch) if ltt_epoch > 0 else datetime.utcnow(),
+                timestamp=datetime.fromtimestamp(ltt_epoch) if ltt_epoch > 0 else datetime.now(timezone.utc).replace(tzinfo=None),
                 open=open_p,
                 high=high_p,
                 low=low_p,
@@ -151,7 +151,7 @@ class DhanPacketParser:
                 exchange_segment=EXCHANGE_SEGMENTS.get(exchange_code, f"UNKNOWN_{exchange_code}"),
                 security_id=sec_id,
                 ltp=ltp,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
                 raw_fields={"depth_levels": depth_list}
             )
         except Exception as e:
@@ -182,7 +182,7 @@ class DhanPacketParser:
                 security_id=sec_id,
                 ltp=ltp,
                 volume=volume,
-                timestamp=datetime.fromtimestamp(ltt_epoch) if ltt_epoch > 0 else datetime.utcnow(),
+                timestamp=datetime.fromtimestamp(ltt_epoch) if ltt_epoch > 0 else datetime.now(timezone.utc).replace(tzinfo=None),
                 open=open_p,
                 high=high_p,
                 low=low_p,
@@ -207,7 +207,7 @@ class DhanPacketParser:
                 exchange_segment=EXCHANGE_SEGMENTS.get(exchange_code, f"UNKNOWN_{exchange_code}"),
                 security_id=sec_id,
                 ltp=0.0,  # No LTP in OI packet
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
                 raw_fields={"oi": oi}
             )
         except Exception as e:
@@ -229,7 +229,7 @@ class DhanPacketParser:
                 exchange_segment=EXCHANGE_SEGMENTS.get(exchange_code, f"UNKNOWN_{exchange_code}"),
                 security_id=sec_id,
                 ltp=0.0,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
                 close=prev_close,
                 raw_fields={"prev_oi": prev_oi}
             )

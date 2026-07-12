@@ -114,6 +114,13 @@ class LiquidityReversalStrategy(BaseStrategy):
         return sum(tr_list[-length:]) / length
 
     async def on_tick(self, packet: MarketPacket) -> None:
+        if (packet.open is None or 
+            packet.high is None or 
+            packet.low is None or 
+            packet.close is None or 
+            packet.volume is None):
+            return
+
         # 1. Update Historical Data Lists
         self.opens.append(packet.open)
         self.highs.append(packet.high)
