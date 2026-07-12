@@ -22,6 +22,11 @@ class StrategyManager:
         self.allocation_weights: List[float] = [0.50, 0.30, 0.20]
         self.total_capital = 100000.0
         
+        self.indices: Dict[str, Dict[str, Any]] = {
+            "NIFTY_50": {"ltp": 0.0, "open": 0.0},
+            "BANK_NIFTY": {"ltp": 0.0, "open": 0.0}
+        }
+        
         # Register broker fill updates back to this manager
         self.broker.register_fill_callback(self._handle_broker_fill)
 

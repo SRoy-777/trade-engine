@@ -14,9 +14,12 @@ entry_end: "10:30"
 enable_trailing_sl: false
 trailing_trigger_rr: 2.0
 trailing_step_rr: 0.5
+max_opening_range_pct: 0.0  # Max opening range width as a percent of price (e.g. 2.0 for 2%). 0.0 to disable.
+enable_nifty_filter: false  # Only take trades aligned with Nifty 50 trend (LTP >= Open).
+max_breakout_wick_pct: 0.0  # Max breakout candle wick size in breakout direction (e.g. 0.30 for 30%). 0.0 to disable.
 output_dir: "market_data/real_orb"
-start_date: "2025-04-01"
-end_date: "2026-03-31"
+start_date: "2023-04-01"
+end_date: "2026-07-11"
 
 # Allocation settings
 allocation_strategy: "SINGLE_STOCK" # SINGLE_STOCK or PERCENTAGE_RANKED

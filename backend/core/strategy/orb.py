@@ -46,6 +46,11 @@ class ORBStrategy(BaseStrategy):
         self.entry_start_str = self.config.get("entry_start", "09:30")
         self.entry_end_str = self.config.get("entry_end", "11:00")
 
+        # Dynamic filters
+        self.max_opening_range_pct = float(self.config.get("max_opening_range_pct", 0.0))
+        self.enable_nifty_filter = bool(self.config.get("enable_nifty_filter", False))
+        self.max_breakout_wick_pct = float(self.config.get("max_breakout_wick_pct", 0.0))
+
         # Parse times
         self.square_off_time = datetime.strptime(self.square_off_str, "%H:%M").time()
         self.entry_start_time = datetime.strptime(self.entry_start_str, "%H:%M").time()
@@ -231,6 +236,34 @@ class ORBStrategy(BaseStrategy):
         volume_confirmed = packet.volume >= (self.volume_filter_multiplier * avg_volume)
 
         if (long_breakout or short_breakout) and volume_confirmed:
+            # 1. Max Opening Range Width filter
+            if self.max_opening_range_pct > 0.0:
+                range_width = self.curr_day_high - self.curr_day_low
+                range_pct = (range_width / self.curr_day_low) * 100.0
+                if range_pct > self.max_opening_range_pct:
+                    return
+
+            # 2. Breakout candle wick check (Close Near Extremes)
+            if self.max_breakout_wick_pct > 0.0 and (packet.high - packet.low) > 0.0:
+                if long_breakout:
+                    wick_fraction = (packet.high - packet.close) / (packet.high - packet.low)
+                    if wick_fraction > self.max_breakout_wick_pct:
+                        return
+                elif short_breakout:
+                    wick_fraction = (packet.close - packet.low) / (packet.high - packet.low)
+                    if wick_fraction > self.max_breakout_wick_pct:
+                        return
+
+            # 3. Nifty Trend filter check
+            if self.enable_nifty_filter and self.manager and hasattr(self.manager, "indices"):
+                nifty = self.manager.indices.get("NIFTY_50")
+                if nifty and nifty.get("ltp", 0.0) > 0.0 and nifty.get("open", 0.0) > 0.0:
+                    nifty_bullish = nifty["ltp"] >= nifty["open"]
+                    if long_breakout and not nifty_bullish:
+                        return
+                    if short_breakout and nifty_bullish:
+                        return
+
             side = "BUY" if long_breakout else "SELL"
             self.trade_taken_today = True
             await self._enter_position(packet, side, "ORB Breakout", avg_volume)

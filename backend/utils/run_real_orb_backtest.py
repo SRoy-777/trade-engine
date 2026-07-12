@@ -120,6 +120,38 @@ async def run_simulation():
                     r["symbol"] = symbol
                     all_rows.append(r)
 
+    # Load Nifty 50 historical data for the trend filter if available
+    nifty_csv_path = None
+    for suffix in ["NIFTY_50_3y_5m.csv", "NIFTY_50_3y_5min.csv", "NIFTY_3y_5m.csv", "NIFTY_50_180d.csv"]:
+        found = list(history_dir.glob(f"**/{suffix}"))
+        if found:
+            nifty_csv_path = found[0]
+            break
+
+    if nifty_csv_path:
+        print(f"Loading Nifty 50 index historical data from: {nifty_csv_path.name}")
+        nifty_count = 0
+        with open(nifty_csv_path, mode="r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                ts_str = r["timestamp"]
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", ""))
+                except ValueError:
+                    try:
+                        ts = datetime.strptime(ts_str.split("+")[0], "%Y-%m-%dT%H:%M:%S.%f")
+                    except ValueError:
+                        ts = datetime.strptime(ts_str.split("+")[0], "%Y-%m-%dT%H:%M:%S")
+                ts_date = ts.date()
+                if start_dt <= ts_date <= end_dt:
+                    r["datetime_parsed"] = ts
+                    r["symbol"] = "NIFTY_50"
+                    all_rows.append(r)
+                    nifty_count += 1
+        print(f"Loaded {nifty_count} Nifty 50 candles for trend filtering.")
+    else:
+        print("Warning: Nifty 50 historical data not found recursively under market_data/history/. Nifty trend filter will be inactive.")
+
     if not all_rows:
         print("Error: No historical data found for any of the symbols within the backtest period.")
         return
@@ -175,6 +207,15 @@ async def run_simulation():
     for idx, r in enumerate(all_rows):
         symbol = r["symbol"]
         ts = r["datetime_parsed"]
+        
+        if symbol == "NIFTY_50":
+            if hasattr(manager, "indices"):
+                manager.indices["NIFTY_50"] = {
+                    "ltp": float(r["close"]),
+                    "open": float(r["open"])
+                }
+            continue
+
         packet = MarketPacket(
             packet_type="Quote",
             exchange_segment="NSE_EQ",

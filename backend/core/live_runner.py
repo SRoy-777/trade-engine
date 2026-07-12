@@ -160,6 +160,12 @@ class LiveTradingRunner:
                     "change_pct": pct,
                     "trend": trend
                 }
+                if self.manager:
+                    self.manager.indices[idx_key] = {
+                        "ltp": ltp_val,
+                        "open": open_val,
+                        "trend": trend
+                    }
                 self.broadcast_update(packet)
                 return
                 
