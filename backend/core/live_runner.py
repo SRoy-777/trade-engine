@@ -1,6 +1,8 @@
 import os
 import csv
 import yaml
+import json
+import urllib.request
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Callable, Optional, List
@@ -12,6 +14,7 @@ from providers.market.dhan.market_provider import DhanMarketProvider
 from providers.market.dhan.models import MarketPacket
 from utils.logger_setup import logger
 from providers.market.dhan.logger import dhan_logger
+from providers.market.dhan.config import dhan_settings
 
 class LiveTradingRunner:
     """Manages active live multi-symbol strategy execution, paper broker, and UI updates."""
@@ -193,6 +196,9 @@ class LiveTradingRunner:
             self.broadcast_update(packet)
 
         self.provider.set_packet_callback(on_provider_tick)
+        
+        # Pre-load historical 5-minute candles to warm up strategy indicators
+        await self._warm_up_strategies(mappings)
         
         self.active = True
         await self.provider.start()
@@ -502,6 +508,200 @@ class LiveTradingRunner:
         self.strategies = {}
         self.symbols = []
         self.priority_ranking = []
+
+    async def _warm_up_strategies(self, mappings: Dict[str, str]) -> None:
+        """Fetches historical 5-minute candles from Dhan charts API on startup to warm up strategy indicators."""
+        access_token = dhan_settings.ACCESS_TOKEN
+        if not access_token:
+            logger.warning("[Live Runner] ACCESS_TOKEN not found. Skipping strategy warmup.")
+            return
+
+        logger.info("[Live Runner] Starting historical indicator warmup from Dhan charts API...")
+        
+        ist_tz = timezone(timedelta(hours=5, minutes=30))
+        now_ist = datetime.now(ist_tz)
+        
+        # Fetch last 4 days of data to cover any weekend/holidays for a 10-period SMA
+        from_date = (now_ist - timedelta(days=4)).date()
+        to_date = now_ist.date()
+        
+        # 1. Warm up Nifty 50 Index first
+        nifty_candles = []
+        try:
+            payload = {
+                "securityId": "13",
+                "exchangeSegment": "IDX_I",
+                "instrument": "INDEX",
+                "expiryCode": 0,
+                "oi": False,
+                "interval": "5",
+                "fromDate": from_date.strftime("%Y-%m-%d"),
+                "toDate": to_date.strftime("%Y-%m-%d")
+            }
+            url = "https://api.dhan.co/v2/charts/intraday"
+            headers = {
+                "Content-Type": "application/json",
+                "access-token": access_token
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST"
+            )
+            loop = asyncio.get_running_loop()
+            def fetch():
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            
+            res_data = await loop.run_in_executor(None, fetch)
+            if "timestamp" in res_data:
+                times = res_data["timestamp"]
+                opens = res_data["open"]
+                highs = res_data["high"]
+                lows = res_data["low"]
+                closes = res_data["close"]
+                volumes = res_data.get("volume", [0] * len(times))
+                for i in range(len(times)):
+                    dt = datetime.fromtimestamp(times[i], tz=timezone.utc).astimezone(ist_tz).replace(tzinfo=None)
+                    if dt < now_ist.replace(tzinfo=None):
+                        nifty_candles.append({
+                            "timestamp": dt,
+                            "open": opens[i],
+                            "high": highs[i],
+                            "low": lows[i],
+                            "close": closes[i],
+                            "volume": int(volumes[i])
+                        })
+                nifty_candles.sort(key=lambda x: x["timestamp"])
+                logger.info(f"[Live Runner] Loaded {len(nifty_candles)} historical candles for NIFTY_50 index warmup.")
+        except Exception as e:
+            logger.error(f"[Live Runner] Error downloading historical NIFTY_50 index data for warmup: {e}")
+
+        # 2. Warm up stock strategies
+        stock_candles_by_symbol = {}
+        for sym in self.symbols:
+            security_id = mappings.get(sym)
+            if not security_id:
+                logger.warning(f"[Live Runner] Warmup skipped: security ID mapping not found for symbol {sym}")
+                continue
+                
+            logger.info(f"[Live Runner] Downloading historical 5m candles for {sym}...")
+            try:
+                payload = {
+                    "securityId": security_id,
+                    "exchangeSegment": "NSE_EQ",
+                    "instrument": "EQUITY",
+                    "expiryCode": 0,
+                    "oi": False,
+                    "interval": "5",
+                    "fromDate": from_date.strftime("%Y-%m-%d"),
+                    "toDate": to_date.strftime("%Y-%m-%d")
+                }
+                url = "https://api.dhan.co/v2/charts/intraday"
+                headers = {
+                    "Content-Type": "application/json",
+                    "access-token": access_token
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=headers,
+                    method="POST"
+                )
+                loop = asyncio.get_running_loop()
+                def fetch_stock():
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        return json.loads(response.read().decode("utf-8"))
+                
+                res_data = await loop.run_in_executor(None, fetch_stock)
+                candles = []
+                if "timestamp" in res_data:
+                    times = res_data["timestamp"]
+                    opens = res_data["open"]
+                    highs = res_data["high"]
+                    lows = res_data["low"]
+                    closes = res_data["close"]
+                    volumes = res_data["volume"]
+                    for i in range(len(times)):
+                        dt = datetime.fromtimestamp(times[i], tz=timezone.utc).astimezone(ist_tz).replace(tzinfo=None)
+                        if dt < now_ist.replace(tzinfo=None):
+                            candles.append({
+                                "timestamp": dt,
+                                "open": opens[i],
+                                "high": highs[i],
+                                "low": lows[i],
+                                "close": closes[i],
+                                "volume": int(volumes[i])
+                            })
+                    candles.sort(key=lambda x: x["timestamp"])
+                    stock_candles_by_symbol[sym] = candles
+                    logger.info(f"[Live Runner] Loaded {len(candles)} historical candles for {sym}.")
+                await asyncio.sleep(0.1)  # Rate limiting safety margin
+            except Exception as e:
+                logger.error(f"[Live Runner] Error downloading historical stock data for warmup for {sym}: {e}")
+
+        # 3. Merge and feed all candles chronologically to the Strategy Manager
+        timeline = []
+        for c in nifty_candles:
+            timeline.append(("13", c))
+        for sym, candles in stock_candles_by_symbol.items():
+            for c in candles:
+                timeline.append((sym, c))
+                
+        timeline.sort(key=lambda x: (x[1]["timestamp"], x[0]))
+        
+        logger.info(f"[Live Runner] Replaying {len(timeline)} historical ticks chronologically for strategy state warmup...")
+        
+        import logging
+        orb_logger = logging.getLogger("orb")
+        prev_level = orb_logger.level
+        orb_logger.setLevel(logging.WARNING)
+        
+        for identifier, c in timeline:
+            if identifier == "13":
+                open_val = c["open"]
+                ltp_val = c["close"]
+                pct = ((ltp_val - open_val) / open_val * 100.0) if open_val > 0 else 0.0
+                trend = "BULLISH" if pct > 0.05 else "BEARISH" if pct < -0.05 else "NEUTRAL"
+                self.indices["NIFTY_50"] = {
+                    "ltp": ltp_val,
+                    "open": open_val,
+                    "change_pct": pct,
+                    "trend": trend
+                }
+                if self.manager:
+                    self.manager.indices["NIFTY_50"] = {
+                        "ltp": ltp_val,
+                        "open": open_val,
+                        "trend": trend
+                    }
+            else:
+                packet = MarketPacket(
+                    packet_type="Quote",
+                    exchange_segment="NSE_EQ",
+                    security_id=identifier,
+                    timestamp=c["timestamp"],
+                    open=c["open"],
+                    high=c["high"],
+                    low=c["low"],
+                    close=c["close"],
+                    volume=c["volume"],
+                    ltp=c["close"]
+                )
+                if self.manager:
+                    self.last_tick_times[identifier] = datetime.now().timestamp()
+                    self.last_ohlc[identifier] = {
+                        "open": c["open"],
+                        "high": c["high"],
+                        "low": c["low"],
+                        "close": c["close"],
+                        "volume": c["volume"]
+                    }
+                    await self.manager.on_tick(packet)
+                    
+        orb_logger.setLevel(prev_level)
+        logger.info("[Live Runner] Strategy state warmup completed successfully.")
 
 live_runner = LiveTradingRunner()
 
