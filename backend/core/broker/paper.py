@@ -107,8 +107,10 @@ class PaperBroker(BaseBroker):
 
     def _is_within_market_hours(self, ts: datetime) -> bool:
         """Validates session trading hour restrictions."""
-        # Convert timestamp to Indian Standard Time (IST) before checking market hours
         ist_tz = timezone(timedelta(hours=5, minutes=30))
+        # If the timestamp is naive, assume it is already in IST (consistent with ticks/backtest)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=ist_tz)
         ts_ist = ts.astimezone(ist_tz)
         time_str = ts_ist.strftime("%H:%M")
         
@@ -123,7 +125,10 @@ class PaperBroker(BaseBroker):
     async def submit_order(self, order_request: Dict[str, Any]) -> str:
         """Processes order request, enforcing session, lot size, margin limits, and queueing latency."""
         order_id = f"paper_ord_{uuid.uuid4().hex[:8]}"
-        current_ts = self.current_time or datetime.now(timezone.utc).replace(tzinfo=None)
+        current_ts = self.current_time
+        if current_ts is None:
+            ist_tz = timezone(timedelta(hours=5, minutes=30))
+            current_ts = datetime.now(timezone.utc).astimezone(ist_tz).replace(tzinfo=None)
         
         symbol = order_request["symbol"]
         qty = int(order_request["qty"])
@@ -236,7 +241,10 @@ class PaperBroker(BaseBroker):
 
     async def cancel_order(self, order_id: str) -> bool:
         """Cancels a pending order."""
-        current_ts = self.current_time or datetime.now(timezone.utc).replace(tzinfo=None)
+        current_ts = self.current_time
+        if current_ts is None:
+            ist_tz = timezone(timedelta(hours=5, minutes=30))
+            current_ts = datetime.now(timezone.utc).astimezone(ist_tz).replace(tzinfo=None)
         async with self._lock:
             if order_id in self._pending_orders:
                 order = self._pending_orders.pop(order_id)
