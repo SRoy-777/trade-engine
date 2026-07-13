@@ -38,4 +38,6 @@ Thumbs.db
 # Large data directories
 data/
 market_data/
+!market_data/*_security_ids.csv
+!market_data/orb/choosed_stocks.xlsx
 
