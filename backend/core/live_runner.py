@@ -53,25 +53,26 @@ class LiveTradingRunner:
         """Loads stock symbol to security ID token mapping from Nifty CSV files."""
         mappings = {}
         for base_dir in [".", ".."]:
-            nifty50_path = os.path.join(base_dir, "market_data", "nifty50_security_ids.csv")
-            niftynext50_path = os.path.join(base_dir, "market_data", "niftynext50_security_ids.csv")
+            market_data_dir = os.path.join(base_dir, "market_data")
+            if os.path.isdir(market_data_dir):
+                for file_name in os.listdir(market_data_dir):
+                    if file_name.endswith("_security_ids.csv"):
+                        path = os.path.join(market_data_dir, file_name)
+                        try:
+                            with open(path, mode="r", encoding="utf-8") as f:
+                                reader = csv.DictReader(f)
+                                for row in reader:
+                                    symbol = row["symbol"].strip().upper()
+                                    sec_id = row["security_id"].strip()
+                                    mappings[symbol] = sec_id
+                        except Exception as e:
+                            logger.error(f"Error reading mapping file {path}: {e}")
+                
+        if mappings:
+            logger.info(f"Successfully loaded {len(mappings)} symbol mappings dynamically.")
+        else:
+            logger.warning("No symbol mappings loaded from market_data directory.")
             
-            loaded = False
-            for path in [nifty50_path, niftynext50_path]:
-                if os.path.exists(path):
-                    try:
-                        with open(path, mode="r", encoding="utf-8") as f:
-                            reader = csv.DictReader(f)
-                            for row in reader:
-                                symbol = row["symbol"].strip().upper()
-                                sec_id = row["security_id"].strip()
-                                mappings[symbol] = sec_id
-                        loaded = True
-                    except Exception as e:
-                        logger.error(f"Error reading mapping file {path}: {e}")
-            if loaded:
-                logger.info(f"Successfully loaded {len(mappings)} symbol mappings from {base_dir}/market_data")
-                break
         return mappings
 
     async def start(self, config: Dict[str, Any], ui_callback: Callable[[Dict[str, Any]], None]) -> None:
