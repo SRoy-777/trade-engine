@@ -44,6 +44,8 @@ ENV REPLAY_FILE_PATH=market_data/historical_data.csv
 ENV DATABASE_PATH=storage/trade_engine.db
 ENV BRONZE_STORAGE_DIR=storage/bronze
 ENV LOG_LEVEL=INFO
+ENV PYTHONUNBUFFERED=1
+
 
 # Start the application
 CMD ["python", "main.py"]
