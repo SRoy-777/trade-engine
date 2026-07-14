@@ -27,6 +27,8 @@ class StrategyManager:
             "BANK_NIFTY": {"ltp": 0.0, "open": 0.0}
         }
         
+        self.is_warming_up = False
+        
         # Register broker fill updates back to this manager
         self.broker.register_fill_callback(self._handle_broker_fill)
 
@@ -94,6 +96,10 @@ class StrategyManager:
 
     async def process_order(self, order_request: Dict[str, Any]) -> None:
         """Validates order via RiskController. If passed, forwards to the Broker."""
+        if self.is_warming_up:
+            dhan_logger.debug(f"[Strategy Manager] Warmup active. Ignoring order request for {order_request.get('symbol')}.")
+            return
+            
         strategy_id = order_request["strategy_id"]
         strategy = self.strategies.get(strategy_id)
         if not strategy:

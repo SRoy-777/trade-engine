@@ -653,6 +653,8 @@ class LiveTradingRunner:
         timeline.sort(key=lambda x: (x[1]["timestamp"], x[0]))
         
         logger.info(f"[Live Runner] Replaying {len(timeline)} historical ticks chronologically for strategy state warmup...")
+        if self.manager:
+            self.manager.is_warming_up = True
         
         import logging
         orb_logger = logging.getLogger("orb")
@@ -701,6 +703,8 @@ class LiveTradingRunner:
                     }
                     await self.manager.on_tick(packet)
                     
+        if self.manager:
+            self.manager.is_warming_up = False
         orb_logger.setLevel(prev_level)
         logger.info("[Live Runner] Strategy state warmup completed successfully.")
 
