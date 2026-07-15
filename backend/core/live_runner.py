@@ -277,9 +277,10 @@ class LiveTradingRunner:
         # Dhan takes a brief moment to authenticate.
         await asyncio.sleep(1.0)
         
-        # Subscribe to all stocks and indices using Ticker mode (RequestCode 15)
+        # Subscribe to stocks in Quote mode (17) and indices in Ticker mode (15)
         # 1 = NSE_EQ segment for stocks, 0 = IDX_I segment for indices
-        instruments = []
+        stock_instruments = []
+        index_instruments = []
         
         # Only subscribe to stocks if user explicitly enables live stock feed (requires paid Dhan Data API)
         enable_live_stocks = config.get("enable_live_stocks", False)
@@ -289,7 +290,7 @@ class LiveTradingRunner:
             for sym in self.symbols:
                 token = mappings.get(sym)
                 if token:
-                    instruments.append((1, token))
+                    stock_instruments.append((1, token))
                     logger.info(f"[Live Runner] Mapped {sym} to security token {token}")
                 else:
                     logger.warning(f"[Live Runner] Unable to map security ID for stock symbol: {sym}")
@@ -297,12 +298,16 @@ class LiveTradingRunner:
             logger.info("[Live Runner] Live stock subscriptions disabled. Index tracking only. (Set enable_live_stocks: true in config if you have Dhan Data API)")
                 
         # Add NIFTY 50 (13) and BANK NIFTY (25) index tokens (always enabled)
-        instruments.append((0, "13"))
-        instruments.append((0, "25"))
+        index_instruments.append((0, "13"))
+        index_instruments.append((0, "25"))
         
-        if instruments:
-            await self.provider.subscribe(request_code=15, instruments=instruments)
-            logger.info(f"[Live Runner] Subscribed all instruments to Ticker data: {instruments}")
+        if stock_instruments:
+            await self.provider.subscribe(request_code=17, instruments=stock_instruments)
+            logger.info(f"[Live Runner] Subscribed stocks to Quote data (Code=17): {stock_instruments}")
+            
+        if index_instruments:
+            await self.provider.subscribe(request_code=15, instruments=index_instruments)
+            logger.info(f"[Live Runner] Subscribed indices to Ticker data (Code=15): {index_instruments}")
             
         # Start watchdog execution thread
         self._watchdog_task = asyncio.create_task(self.watchdog_loop())
