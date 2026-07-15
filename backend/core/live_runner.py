@@ -48,6 +48,7 @@ class LiveTradingRunner:
         self.connection_ok = True
         self.enable_live_stocks = False
         self._watchdog_task: Optional[asyncio.Task] = None
+        self.current_bars: Dict[str, Dict[str, Any]] = {}
 
     def _load_symbol_mappings(self) -> Dict[str, str]:
         """Loads stock symbol to security ID token mapping from Nifty CSV files."""
@@ -189,9 +190,78 @@ class LiveTradingRunner:
                 # Ensure the packet carries the parsed token symbol name
                 packet.security_id = mapped_symbol
             
-            # Feed packet to strategy manager
+            # Feed packet to strategy manager (for broker real-time exits & PnL updates)
             if self.manager:
                 await self.manager.on_tick(packet)
+            
+            # Aggregate 5-minute candles for strategy breakout check
+            if mapped_symbol in self.symbols:
+                # Align time to the preceding 5-minute boundary
+                bar_minute = (packet.timestamp.minute // 5) * 5
+                bar_timestamp = packet.timestamp.replace(minute=bar_minute, second=0, microsecond=0)
+                
+                if mapped_symbol not in self.current_bars:
+                    self.current_bars[mapped_symbol] = {
+                        "timestamp": bar_timestamp,
+                        "open": packet.ltp,
+                        "high": packet.ltp,
+                        "low": packet.ltp,
+                        "close": packet.ltp,
+                        "start_volume": packet.volume,
+                        "latest_volume": packet.volume
+                    }
+                else:
+                    bar = self.current_bars[mapped_symbol]
+                    if bar_timestamp == bar["timestamp"]:
+                        bar["high"] = max(bar["high"], packet.ltp)
+                        bar["low"] = min(bar["low"], packet.ltp)
+                        bar["close"] = packet.ltp
+                        bar["latest_volume"] = packet.volume
+                    elif bar_timestamp > bar["timestamp"]:
+                        # Finalize completed 5m candle
+                        bar_volume = 0
+                        if bar["latest_volume"] is not None and bar["start_volume"] is not None:
+                            bar_volume = bar["latest_volume"] - bar["start_volume"]
+                            if bar_volume < 0:
+                                bar_volume = 0
+                        
+                        completed_candle = MarketPacket(
+                            packet_type="Quote",
+                            exchange_segment="NSE_EQ",
+                            security_id=mapped_symbol,
+                            timestamp=bar["timestamp"],
+                            open=bar["open"],
+                            high=bar["high"],
+                            low=bar["low"],
+                            close=bar["close"],
+                            volume=bar_volume,
+                            ltp=bar["close"]
+                        )
+                        
+                        # Feed the 5m candle to the strategy manager
+                        if self.manager:
+                            logger.info(f"[Live Runner] Feeding completed 5m candle for {mapped_symbol} at {bar['timestamp'].strftime('%H:%M')}: O={bar['open']}, H={bar['high']}, L={bar['low']}, C={bar['close']}, V={bar_volume}")
+                            
+                            # Temporarily override self.last_ohlc so UI shows the correct 5m bar values
+                            self.last_ohlc[mapped_symbol] = {
+                                "open": bar["open"],
+                                "high": bar["high"],
+                                "low": bar["low"],
+                                "close": bar["close"],
+                                "volume": bar_volume
+                            }
+                            await self.manager.on_tick(completed_candle)
+                            
+                        # Start new 5m candle
+                        self.current_bars[mapped_symbol] = {
+                            "timestamp": bar_timestamp,
+                            "open": packet.ltp,
+                            "high": packet.ltp,
+                            "low": packet.ltp,
+                            "close": packet.ltp,
+                            "start_volume": packet.volume,
+                            "latest_volume": packet.volume
+                        }
             
             # Send latest prices & position updates to frontend
             self.broadcast_update(packet)
