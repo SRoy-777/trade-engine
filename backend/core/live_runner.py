@@ -87,6 +87,13 @@ class LiveTradingRunner:
         
         # 1. Parse and extract configuration parameters
         self.symbols = [s.strip().upper() for s in config.get("symbols", ["SBIN", "BAJFINANCE", "INFY"])]
+        
+        # Enforce Dhan WebSocket limits (max 100 subscriptions per connection)
+        # We reserve 2 slots for indices (Nifty 50 and Bank Nifty) and safety margins, limiting stock symbols to 90
+        if len(self.symbols) > 90:
+            logger.warning(f"[Live Runner] Dhan WebSocket supports a maximum of 100 subscriptions. Slicing your {len(self.symbols)} symbols to the first 90 to prevent connection drops.")
+            self.symbols = self.symbols[:90]
+            
         raw_priority = config.get("priority_ranking", self.symbols)
         self.priority_ranking = [s.strip().upper() for s in raw_priority if s.strip().upper() in self.symbols]
         self.allocation_strategy = config.get("allocation_strategy", "SINGLE_STOCK").upper()
