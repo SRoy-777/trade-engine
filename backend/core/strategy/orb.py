@@ -238,14 +238,29 @@ class ORBStrategy(BaseStrategy):
         long_breakout = packet.close > self.curr_day_high
         short_breakout = packet.close < self.curr_day_low
 
-        volume_confirmed = packet.volume >= (self.volume_filter_multiplier * avg_volume)
+        if long_breakout or short_breakout:
+            dhan_logger.info(
+                f"[ORB] Breakout detected for {self.symbol} at {current_time}: "
+                f"{'LONG' if long_breakout else 'SHORT'} (Close: ₹{packet.close:.2f}, Range: ₹{self.curr_day_low:.2f} - ₹{self.curr_day_high:.2f})"
+            )
 
-        if (long_breakout or short_breakout) and volume_confirmed:
+            # Check volume confirmation
+            volume_confirmed = packet.volume >= (self.volume_filter_multiplier * avg_volume)
+            if not volume_confirmed:
+                dhan_logger.info(
+                    f"[ORB] Entry Blocked for {self.symbol}: Volume not confirmed. "
+                    f"Bar Vol: {packet.volume}, Req Vol: {self.volume_filter_multiplier * avg_volume:.0f} (Avg: {avg_volume:.0f})"
+                )
+                return
+
             # 1. Max Opening Range Width filter
             if self.max_opening_range_pct > 0.0:
                 range_width = self.curr_day_high - self.curr_day_low
                 range_pct = (range_width / self.curr_day_low) * 100.0
                 if range_pct > self.max_opening_range_pct:
+                    dhan_logger.info(
+                        f"[ORB] Entry Blocked for {self.symbol}: Range width {range_pct:.2f}% exceeds max allowed {self.max_opening_range_pct}%"
+                    )
                     self.blocked_by_range_count += 1
                     return
 
@@ -254,11 +269,17 @@ class ORBStrategy(BaseStrategy):
                 if long_breakout:
                     wick_fraction = (packet.high - packet.close) / (packet.high - packet.low)
                     if wick_fraction > self.max_breakout_wick_pct:
+                        dhan_logger.info(
+                            f"[ORB] Entry Blocked for {self.symbol}: Long breakout wick fraction {wick_fraction:.2f} exceeds max {self.max_breakout_wick_pct}"
+                        )
                         self.blocked_by_wick_count += 1
                         return
                 elif short_breakout:
                     wick_fraction = (packet.close - packet.low) / (packet.high - packet.low)
                     if wick_fraction > self.max_breakout_wick_pct:
+                        dhan_logger.info(
+                            f"[ORB] Entry Blocked for {self.symbol}: Short breakout wick fraction {wick_fraction:.2f} exceeds max {self.max_breakout_wick_pct}"
+                        )
                         self.blocked_by_wick_count += 1
                         return
 
@@ -268,9 +289,15 @@ class ORBStrategy(BaseStrategy):
                 if nifty and nifty.get("ltp", 0.0) > 0.0 and nifty.get("open", 0.0) > 0.0:
                     nifty_bullish = nifty["ltp"] >= nifty["open"]
                     if long_breakout and not nifty_bullish:
+                        dhan_logger.info(
+                            f"[ORB] Entry Blocked for {self.symbol}: Long breakout but Nifty 50 is bearish (LTP: ₹{nifty['ltp']:.2f}, Open: ₹{nifty['open']:.2f})"
+                        )
                         self.blocked_by_nifty_count += 1
                         return
                     if short_breakout and nifty_bullish:
+                        dhan_logger.info(
+                            f"[ORB] Entry Blocked for {self.symbol}: Short breakout but Nifty 50 is bullish (LTP: ₹{nifty['ltp']:.2f}, Open: ₹{nifty['open']:.2f})"
+                        )
                         self.blocked_by_nifty_count += 1
                         return
 

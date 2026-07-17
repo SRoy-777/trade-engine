@@ -49,6 +49,7 @@ class LiveTradingRunner:
         self.enable_live_stocks = False
         self._watchdog_task: Optional[asyncio.Task] = None
         self.current_bars: Dict[str, Dict[str, Any]] = {}
+        self.last_cumulative_volumes: Dict[str, int] = {}
 
     def _load_symbol_mappings(self) -> Dict[str, str]:
         """Loads stock symbol to security ID token mapping from Nifty CSV files."""
@@ -214,7 +215,6 @@ class LiveTradingRunner:
                         "high": packet.ltp,
                         "low": packet.ltp,
                         "close": packet.ltp,
-                        "start_volume": packet.volume,
                         "latest_volume": packet.volume
                     }
                 else:
@@ -227,10 +227,17 @@ class LiveTradingRunner:
                     elif bar_timestamp > bar["timestamp"]:
                         # Finalize completed 5m candle
                         bar_volume = 0
-                        if bar["latest_volume"] is not None and bar["start_volume"] is not None:
-                            bar_volume = bar["latest_volume"] - bar["start_volume"]
+                        if bar["latest_volume"] is not None:
+                            prev_cum_vol = self.last_cumulative_volumes.get(mapped_symbol, 0)
+                            if prev_cum_vol > 0:
+                                bar_volume = bar["latest_volume"] - prev_cum_vol
+                            else:
+                                bar_volume = bar["latest_volume"]
+                                
                             if bar_volume < 0:
                                 bar_volume = 0
+                            
+                            self.last_cumulative_volumes[mapped_symbol] = bar["latest_volume"]
                         
                         completed_candle = MarketPacket(
                             packet_type="Quote",
@@ -266,7 +273,6 @@ class LiveTradingRunner:
                             "high": packet.ltp,
                             "low": packet.ltp,
                             "close": packet.ltp,
-                            "start_volume": packet.volume,
                             "latest_volume": packet.volume
                         }
             
