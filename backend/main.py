@@ -145,6 +145,15 @@ app.add_middleware(
 # Attach API endpoints
 app.include_router(api_router)
 
+@app.get("/")
+def read_root():
+    return {
+        "status": "running",
+        "engine": "Trade Engine Platform",
+        "live_runner_active": live_runner.active,
+        "symbols_tracked": len(live_runner.symbols) if live_runner.active else 0
+    }
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket_broadcaster.connect(websocket)
