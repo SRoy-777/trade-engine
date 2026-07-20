@@ -145,8 +145,8 @@ app.add_middleware(
 # Attach API endpoints
 app.include_router(api_router)
 
-@app.get("/")
-def read_root():
+@app.get("/health")
+def read_health():
     return {
         "status": "running",
         "engine": "Trade Engine Platform",
