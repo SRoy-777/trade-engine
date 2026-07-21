@@ -213,6 +213,9 @@ class ORBStrategy(BaseStrategy):
             return
 
         # --- Entry Logic ---
+        if self.manager and self.manager.is_warming_up:
+            return
+
         if self.pending_entry is not None:
             return
 
