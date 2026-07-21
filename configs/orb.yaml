@@ -10,7 +10,7 @@ take_profit_pct: 1.50
 stop_loss_pct: 1.00
 square_off: "15:15"
 entry_start: "09:30"
-entry_end: "10:00"
+entry_end: "14:30"
 enable_trailing_sl: false
 trailing_trigger_rr: 2.0
 trailing_step_rr: 0.5
