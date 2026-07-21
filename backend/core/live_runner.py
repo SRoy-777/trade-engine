@@ -264,7 +264,7 @@ class LiveTradingRunner:
                                 "close": bar["close"],
                                 "volume": bar_volume
                             }
-                            await self.manager.on_tick(completed_candle)
+                            await self.manager.on_candle(completed_candle)
                             
                         # Start new 5m candle
                         self.current_bars[mapped_symbol] = {

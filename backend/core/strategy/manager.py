@@ -88,11 +88,23 @@ class StrategyManager:
         for strategy in self.strategies.values():
             if symbol in strategy.symbols:
                 strategy.update_unrealized_pnl(symbol, price)
-                # Dispatch tick to strategy for logical decision making
-                try:
-                    await strategy.on_tick(packet)
-                except Exception as e:
-                    dhan_logger.error(f"Error executing on_tick for strategy {strategy.name}: {e}")
+                # Dispatch raw tick to strategy ONLY for active trade exits (SL/TP)
+                if strategy.active_trade is not None:
+                    try:
+                        await strategy.on_tick(packet)
+                    except Exception as e:
+                        dhan_logger.error(f"Error executing on_tick for strategy {strategy.name}: {e}")
+
+    async def on_candle(self, candle: MarketPacket) -> None:
+        """Dispatches completed 5-minute candles to strategies for breakout entry decisions."""
+        symbol = candle.security_id
+        for strategy in self.strategies.values():
+            if symbol in strategy.symbols:
+                if strategy.active_trade is None:
+                    try:
+                        await strategy.on_tick(candle)
+                    except Exception as e:
+                        dhan_logger.error(f"Error executing on_candle for strategy {strategy.name}: {e}")
 
     async def process_order(self, order_request: Dict[str, Any]) -> None:
         """Validates order via RiskController. If passed, forwards to the Broker."""
