@@ -789,7 +789,7 @@ class LiveTradingRunner:
                         "close": c["close"],
                         "volume": c["volume"]
                     }
-                    await self.manager.on_tick(packet)
+                    await self.manager.on_candle(packet)
                     
         if self.manager:
             self.manager.is_warming_up = False
