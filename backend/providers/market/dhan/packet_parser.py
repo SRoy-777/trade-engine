@@ -67,7 +67,7 @@ class DhanPacketParser:
                 exchange_segment=EXCHANGE_SEGMENTS.get(exchange_code, f"UNKNOWN_{exchange_code}"),
                 security_id=sec_id,
                 ltp=ltp,
-                timestamp=datetime.fromtimestamp(ltt_epoch, tz=timezone.utc).astimezone(ist_tz).replace(tzinfo=None) if ltt_epoch > 0 else datetime.now(ist_tz).replace(tzinfo=None),
+                timestamp=datetime.fromtimestamp(ltt_epoch, tz=timezone.utc).replace(tzinfo=None) if ltt_epoch > 0 else datetime.now(ist_tz).replace(tzinfo=None),
                 raw_fields={"ltt_epoch": ltt_epoch}
             )
         except Exception as e:
@@ -101,7 +101,7 @@ class DhanPacketParser:
                 security_id=sec_id,
                 ltp=ltp,
                 volume=volume,
-                timestamp=datetime.fromtimestamp(ltt_epoch, tz=timezone.utc).astimezone(ist_tz).replace(tzinfo=None) if ltt_epoch > 0 else datetime.now(ist_tz).replace(tzinfo=None),
+                timestamp=datetime.fromtimestamp(ltt_epoch, tz=timezone.utc).replace(tzinfo=None) if ltt_epoch > 0 else datetime.now(ist_tz).replace(tzinfo=None),
                 open=open_p,
                 high=high_p,
                 low=low_p,
@@ -183,7 +183,7 @@ class DhanPacketParser:
                 security_id=sec_id,
                 ltp=ltp,
                 volume=volume,
-                timestamp=datetime.fromtimestamp(ltt_epoch, tz=timezone.utc).astimezone(ist_tz).replace(tzinfo=None) if ltt_epoch > 0 else datetime.now(ist_tz).replace(tzinfo=None),
+                timestamp=datetime.fromtimestamp(ltt_epoch, tz=timezone.utc).replace(tzinfo=None) if ltt_epoch > 0 else datetime.now(ist_tz).replace(tzinfo=None),
                 open=open_p,
                 high=high_p,
                 low=low_p,
