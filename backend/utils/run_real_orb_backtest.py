@@ -229,6 +229,7 @@ async def run_simulation():
             close=float(r["close"])
         )
 
+        await manager.on_candle(packet)
         await manager.on_tick(packet)
         await asyncio.sleep(0)
 
