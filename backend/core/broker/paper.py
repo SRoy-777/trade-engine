@@ -172,14 +172,14 @@ class PaperBroker(BaseBroker):
                 order["status"] = "REJECTED"
                 order["reason"] = "Outside configured market hours"
                 dhan_logger.warning(f"[Paper Broker] Order {order_id} rejected: Outside session hours ({current_ts.strftime('%H:%M:%S')})")
-                return order_id
+                raise ValueError(order["reason"])
 
             # 2. Enforce minimum quantity and lot size constraints
             if qty < self.sim_config.MIN_QTY:
                 order["status"] = "REJECTED"
                 order["reason"] = f"Quantity {qty} less than minimum required {self.sim_config.MIN_QTY}"
                 dhan_logger.warning(f"[Paper Broker] Order {order_id} rejected: {order['reason']}")
-                return order_id
+                raise ValueError(order["reason"])
 
             if qty % self.sim_config.LOT_SIZE != 0:
                 adjusted_qty = (qty // self.sim_config.LOT_SIZE) * self.sim_config.LOT_SIZE
@@ -187,7 +187,7 @@ class PaperBroker(BaseBroker):
                     order["status"] = "REJECTED"
                     order["reason"] = f"Quantity {qty} failed lot size alignment of {self.sim_config.LOT_SIZE}"
                     dhan_logger.warning(f"[Paper Broker] Order {order_id} rejected: {order['reason']}")
-                    return order_id
+                    raise ValueError(order["reason"])
                 dhan_logger.info(f"[Paper Broker] Aligning quantity {qty} to lot size {self.sim_config.LOT_SIZE}. New qty: {adjusted_qty}")
                 qty = adjusted_qty
                 order["qty"] = qty
@@ -201,7 +201,7 @@ class PaperBroker(BaseBroker):
                 order["status"] = "REJECTED"
                 order["reason"] = f"Insufficient margin. Required: Rs.{required_margin:.2f}, Available: Rs.{self._cash:.2f}"
                 dhan_logger.warning(f"[Paper Broker] Order {order_id} rejected: {order['reason']}")
-                return order_id
+                raise ValueError(order["reason"])
 
             # 4. Route orders based on execution type
             if order_type == "MARKET":
@@ -249,6 +249,7 @@ class PaperBroker(BaseBroker):
                 order["status"] = "REJECTED"
                 order["reason"] = f"Unsupported order type: {order_type}"
                 dhan_logger.warning(f"[Paper Broker] Order {order_id} rejected: {order['reason']}")
+                raise ValueError(order["reason"])
 
         return order_id
 

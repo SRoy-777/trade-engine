@@ -138,8 +138,8 @@ class StrategyManager:
             # 2. Verify Single Stock constraints
             if self.allocation_strategy == "SINGLE_STOCK":
                 for strat in self.strategies.values():
-                    if strat.symbol != symbol and strat.active_trade is not None:
-                        raise ValueError(f"Allocation block: Single Stock rule active. Already in trade for {strat.symbol}.")
+                    if strat.symbol != symbol and (strat.active_trade is not None or getattr(strat, "pending_entry", None) is not None):
+                        raise ValueError(f"Allocation block: Single Stock rule active. Already in trade or order pending for {strat.symbol}.")
 
         try:
             # 3. Pre-trade Risk Check Gate

@@ -421,7 +421,13 @@ class ORBStrategy(BaseStrategy):
         }
 
         dhan_logger.info(f"[ORB] Entry Triggered: {side} {qty} {self.symbol} on {setup_name} at close ₹{close_price:.2f} (Avg Vol: {avg_volume:.0f})")
-        await self.submit_order(self.symbol, side, qty, price=close_price, order_type="MARKET")
+        try:
+            await self.submit_order(self.symbol, side, qty, price=close_price, order_type="MARKET")
+        except Exception as e:
+            self.pending_entry = None
+            self.trade_taken_today = False
+            dhan_logger.warning(f"[ORB] Entry order placement failed for {self.symbol}: {e}")
+            raise e
 
     async def _close_position(self, packet: MarketPacket, reason: str, override_price: Optional[float] = None) -> None:
         if self.active_trade is None or self.active_trade.get("exit_order_pending"):
