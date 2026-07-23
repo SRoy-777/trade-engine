@@ -145,6 +145,52 @@ class LiveTradingRunner:
         self.warning_symbols = []
         self.connection_ok = True
 
+        # 4a. Restore persisted state from R2 + DuckDB (if enabled)
+        self._persistence = None
+        if config.get("enable_persistence", False):
+            try:
+                from core.persistence import PersistenceManager
+                self._persistence = PersistenceManager()
+                logger.info("[Live Runner] Persistence enabled — restoring state from R2...")
+
+                # Download DuckDB from R2 BEFORE connecting (must run first)
+                await self._persistence.restore_from_r2()
+
+                # Reconnect DuckDB so it picks up the downloaded file
+                from storage_engine.connection import db_manager
+                if db_manager._conn is not None:
+                    db_manager.close()
+                db_manager.connect()
+
+                # Restore cash balance
+                saved_cash = self._persistence.load_cash()
+                if saved_cash is not None:
+                    self.broker._cash = saved_cash
+                    logger.info(f"[Live Runner] Cash restored: Rs.{saved_cash:,.2f}")
+
+                # Restore open positions into strategy instances
+                open_positions = self._persistence.load_open_positions()
+                for sym, pos in open_positions.items():
+                    if sym in self.strategies:
+                        self.strategies[sym].active_trade = pos
+                        self.strategies[sym].trade_taken_today = True
+                        logger.info(f"[Live Runner] Restored open position for {sym} — SL/TP monitoring will resume on next tick")
+
+                # Restore trade history into strategy instances
+                history_by_symbol = self._persistence.load_trade_history()
+                for sym, history in history_by_symbol.items():
+                    if sym in self.strategies:
+                        self.strategies[sym].trade_history = history
+
+                # Inject persistence manager into each strategy
+                for strat in self.strategies.values():
+                    strat._persistence = self._persistence
+
+                logger.info("[Live Runner] State restore complete.")
+            except Exception as e:
+                logger.error(f"[Live Runner] Persistence restore failed (starting fresh): {e}")
+                self._persistence = None
+
         # 4. Connect broker fills to notify the UI instantly
         original_callback = self.broker._fill_callback
         async def on_broker_fill(fill_event: Dict[str, Any]):

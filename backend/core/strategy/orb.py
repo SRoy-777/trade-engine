@@ -82,6 +82,10 @@ class ORBStrategy(BaseStrategy):
         self.pending_entry: Optional[dict[str, Any]] = None
         self.trade_history: List[dict[str, Any]] = []
 
+        # Persistence manager (injected by live_runner when enable_persistence=true)
+        # If None, all persistence hooks are silently skipped (safe for backtests)
+        self._persistence = None
+
     async def on_tick(self, packet: MarketPacket) -> None:
         """Processes each 5-minute OHLC tick."""
         if packet.security_id != self.symbol:
@@ -508,6 +512,17 @@ class ORBStrategy(BaseStrategy):
             )
             self.pending_entry = None
 
+            # Persist open position to DuckDB + R2 (background, does not block trade)
+            if self._persistence is not None:
+                try:
+                    cash = self.manager.broker._cash if self.manager else 0.0
+                    import asyncio
+                    asyncio.create_task(
+                        self._persistence.on_entry(self.symbol, self.active_trade, cash)
+                    )
+                except Exception as _pe:
+                    dhan_logger.warning(f"[ORB] Persistence on_entry skipped: {_pe}")
+
         # 2. Exit Order Fill
         elif self.active_trade is not None:
             trade = self.active_trade
@@ -557,6 +572,17 @@ class ORBStrategy(BaseStrategy):
                 f"[ORB] Position Closed: {trade_record['Exit_Reason']} fill at ₹{price:.2f}. "
                 f"Gross PnL: ₹{gross_pnl:.2f}, Fees: ₹{total_fees:.2f}, Net PnL: ₹{net_pnl:.2f}, Hold Time: {hold_time_mins} mins"
             )
+
+            # Persist closed trade to DuckDB + R2 (background, does not block trade)
+            if self._persistence is not None:
+                try:
+                    cash = self.manager.broker._cash if self.manager else 0.0
+                    import asyncio
+                    asyncio.create_task(
+                        self._persistence.on_exit(trade_record, cash)
+                    )
+                except Exception as _pe:
+                    dhan_logger.warning(f"[ORB] Persistence on_exit skipped: {_pe}")
 
             self.active_trade = None
             self.pending_entry = None
