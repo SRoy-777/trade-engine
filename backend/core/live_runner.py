@@ -161,6 +161,7 @@ class LiveTradingRunner:
             if not self.active:
                 return
             
+            packet.is_live_tick = True
             sym = packet.security_id
             
             # Check for Nifty/Bank Nifty index packets (Dhan Security ID: Nifty 50 = "13", Bank Nifty = "25")

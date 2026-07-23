@@ -155,61 +155,111 @@ class ORBStrategy(BaseStrategy):
             tp = trade["take_profit"]
 
             if is_long:
-                # Stopped out check
-                if packet.low <= sl:
-                    exit_price = min(packet.open, sl)
-                    await self._close_position(packet, "Stop Loss", exit_price)
-                    return
-                # Target Profit check
-                elif packet.high >= tp:
-                    exit_price = max(packet.open, tp)
-                    await self._close_position(packet, "Take Profit", exit_price)
-                    return
-
-                # Trailing stop update
-                if self.enable_trailing_sl:
-                    if packet.high > trade["max_price"]:
-                        trade["max_price"] = packet.high
-                    
-                    entry_price = trade["entry_price"]
-                    initial_risk = trade["initial_risk"]
-                    peak_r = (trade["max_price"] - entry_price) / initial_risk
-                    
-                    if peak_r >= self.trailing_trigger_rr:
-                        steps = int((peak_r - self.trailing_trigger_rr) / self.trailing_step_rr)
-                        new_sl = entry_price + steps * self.trailing_step_rr * initial_risk
-                        new_sl = round(new_sl * 20) / 20
-                        if new_sl > trade["stop_loss"]:
-                            trade["stop_loss"] = new_sl
-                            dhan_logger.info(f"[ORB] Trailing Stop Loss updated to: ₹{new_sl:.2f} (Peak R: {peak_r:.2f})")
+                if getattr(packet, "is_live_tick", False):
+                    # Live Trading: Exit checks based on Last Traded Price (ltp)
+                    if packet.ltp <= sl:
+                        await self._close_position(packet, "Stop Loss", packet.ltp)
+                        return
+                    elif packet.ltp >= tp:
+                        await self._close_position(packet, "Take Profit", packet.ltp)
+                        return
+                        
+                    # Trailing stop update in live trading
+                    if self.enable_trailing_sl:
+                        if packet.ltp > trade["max_price"]:
+                            trade["max_price"] = packet.ltp
+                        
+                        entry_price = trade["entry_price"]
+                        initial_risk = trade["initial_risk"]
+                        peak_r = (trade["max_price"] - entry_price) / initial_risk
+                        
+                        if peak_r >= self.trailing_trigger_rr:
+                            steps = int((peak_r - self.trailing_trigger_rr) / self.trailing_step_rr)
+                            new_sl = entry_price + steps * self.trailing_step_rr * initial_risk
+                            new_sl = round(new_sl * 20) / 20
+                            if new_sl > trade["stop_loss"]:
+                                trade["stop_loss"] = new_sl
+                                dhan_logger.info(f"[ORB] Trailing Stop Loss updated to: Rs.{new_sl:.2f} (Peak R: {peak_r:.2f})")
+                else:
+                    # Backtesting: Exit checks based on candle High/Low
+                    if packet.low <= sl:
+                        exit_price = min(packet.open, sl)
+                        await self._close_position(packet, "Stop Loss", exit_price)
+                        return
+                    elif packet.high >= tp:
+                        exit_price = max(packet.open, tp)
+                        await self._close_position(packet, "Take Profit", exit_price)
+                        return
+                        
+                    # Trailing stop update in backtesting
+                    if self.enable_trailing_sl:
+                        if packet.high > trade["max_price"]:
+                            trade["max_price"] = packet.high
+                        
+                        entry_price = trade["entry_price"]
+                        initial_risk = trade["initial_risk"]
+                        peak_r = (trade["max_price"] - entry_price) / initial_risk
+                        
+                        if peak_r >= self.trailing_trigger_rr:
+                            steps = int((peak_r - self.trailing_trigger_rr) / self.trailing_step_rr)
+                            new_sl = entry_price + steps * self.trailing_step_rr * initial_risk
+                            new_sl = round(new_sl * 20) / 20
+                            if new_sl > trade["stop_loss"]:
+                                trade["stop_loss"] = new_sl
+                                dhan_logger.info(f"[ORB] Trailing Stop Loss updated to: Rs.{new_sl:.2f} (Peak R: {peak_r:.2f})")
             else:
-                # Stopped out check
-                if packet.high >= sl:
-                    exit_price = max(packet.open, sl)
-                    await self._close_position(packet, "Stop Loss", exit_price)
-                    return
-                # Target Profit check
-                elif packet.low <= tp:
-                    exit_price = min(packet.open, tp)
-                    await self._close_position(packet, "Take Profit", exit_price)
-                    return
-
-                # Trailing stop update
-                if self.enable_trailing_sl:
-                    if packet.low < trade["min_price"]:
-                        trade["min_price"] = packet.low
-                    
-                    entry_price = trade["entry_price"]
-                    initial_risk = trade["initial_risk"]
-                    peak_r = (entry_price - trade["min_price"]) / initial_risk
-                    
-                    if peak_r >= self.trailing_trigger_rr:
-                        steps = int((peak_r - self.trailing_trigger_rr) / self.trailing_step_rr)
-                        new_sl = entry_price - steps * self.trailing_step_rr * initial_risk
-                        new_sl = round(new_sl * 20) / 20
-                        if new_sl < trade["stop_loss"]:
-                            trade["stop_loss"] = new_sl
-                            dhan_logger.info(f"[ORB] Trailing Stop Loss updated to: ₹{new_sl:.2f} (Peak R: {peak_r:.2f})")
+                if getattr(packet, "is_live_tick", False):
+                    # Live Trading: Exit checks based on Last Traded Price (ltp)
+                    if packet.ltp >= sl:
+                        await self._close_position(packet, "Stop Loss", packet.ltp)
+                        return
+                    elif packet.ltp <= tp:
+                        await self._close_position(packet, "Take Profit", packet.ltp)
+                        return
+                        
+                    # Trailing stop update in live trading
+                    if self.enable_trailing_sl:
+                        if packet.ltp < trade["min_price"]:
+                            trade["min_price"] = packet.ltp
+                        
+                        entry_price = trade["entry_price"]
+                        initial_risk = trade["initial_risk"]
+                        peak_r = (entry_price - trade["min_price"]) / initial_risk
+                        
+                        if peak_r >= self.trailing_trigger_rr:
+                            steps = int((peak_r - self.trailing_trigger_rr) / self.trailing_step_rr)
+                            new_sl = entry_price - steps * self.trailing_step_rr * initial_risk
+                            new_sl = round(new_sl * 20) / 20
+                            if new_sl < trade["stop_loss"]:
+                                trade["stop_loss"] = new_sl
+                                dhan_logger.info(f"[ORB] Trailing Stop Loss updated to: Rs.{new_sl:.2f} (Peak R: {peak_r:.2f})")
+                else:
+                    # Backtesting: Exit checks based on candle High/Low
+                    if packet.high >= sl:
+                        exit_price = max(packet.open, sl)
+                        await self._close_position(packet, "Stop Loss", exit_price)
+                        return
+                    elif packet.low <= tp:
+                        exit_price = min(packet.open, tp)
+                        await self._close_position(packet, "Take Profit", exit_price)
+                        return
+                        
+                    # Trailing stop update in backtesting
+                    if self.enable_trailing_sl:
+                        if packet.low < trade["min_price"]:
+                            trade["min_price"] = packet.low
+                        
+                        entry_price = trade["entry_price"]
+                        initial_risk = trade["initial_risk"]
+                        peak_r = (entry_price - trade["min_price"]) / initial_risk
+                        
+                        if peak_r >= self.trailing_trigger_rr:
+                            steps = int((peak_r - self.trailing_trigger_rr) / self.trailing_step_rr)
+                            new_sl = entry_price - steps * self.trailing_step_rr * initial_risk
+                            new_sl = round(new_sl * 20) / 20
+                            if new_sl < trade["stop_loss"]:
+                                trade["stop_loss"] = new_sl
+                                dhan_logger.info(f"[ORB] Trailing Stop Loss updated to: Rs.{new_sl:.2f} (Peak R: {peak_r:.2f})")
             return
 
         # --- Entry Logic ---

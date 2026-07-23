@@ -19,6 +19,7 @@ class MarketPacket(BaseModel):
     high: Optional[float] = None
     low: Optional[float] = None
     close: Optional[float] = None
+    is_live_tick: bool = False
     raw_fields: Dict[str, Any] = Field(default_factory=dict) # Catch-all for diagnostics
 
 class SubscriptionRequest(BaseModel):
