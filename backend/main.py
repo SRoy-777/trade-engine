@@ -147,11 +147,40 @@ app.include_router(api_router)
 
 @app.get("/health")
 def read_health():
+    import traceback
+    config_err = None
+    resolved_paths = []
+    yaml_raw = None
+    try:
+        config_path = "configs/orb.yaml"
+        if not os.path.exists(config_path) and os.path.exists(os.path.join("..", config_path)):
+            config_path = os.path.join("..", config_path)
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                yaml_config = yaml.safe_load(f) or {}
+            yaml_raw = str(yaml_config.get("symbols"))
+            raw_symbols = yaml_config.get("symbols", [])
+            if isinstance(raw_symbols, str) and raw_symbols.endswith(".xlsx"):
+                xlsx_path = os.path.join(os.path.dirname(config_path), "..", raw_symbols)
+                resolved_paths.append(f"path1: {xlsx_path} (exists: {os.path.exists(xlsx_path)})")
+                if not os.path.exists(xlsx_path):
+                    xlsx_path = raw_symbols
+                    resolved_paths.append(f"path2: {xlsx_path} (exists: {os.path.exists(xlsx_path)})")
+                if not os.path.exists(xlsx_path):
+                    xlsx_path = os.path.join("backend", raw_symbols)
+                    resolved_paths.append(f"path3: {xlsx_path} (exists: {os.path.exists(xlsx_path)})")
+    except Exception as e:
+        config_err = traceback.format_exc()
+
     return {
         "status": "running",
         "engine": "Trade Engine Platform",
         "live_runner_active": live_runner.active,
-        "symbols_tracked": len(live_runner.symbols) if live_runner.active else 0
+        "symbols_tracked": len(live_runner.symbols) if live_runner.active else 0,
+        "symbols": live_runner.symbols if live_runner.active else [],
+        "yaml_raw_symbols": yaml_raw,
+        "config_err": config_err,
+        "resolved_paths": resolved_paths
     }
 
 @app.websocket("/ws")
