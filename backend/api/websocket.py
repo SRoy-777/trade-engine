@@ -119,6 +119,7 @@ class WebSocketBroadcaster:
                         
                 update_msg = self._build_update_message()
                 if "configuration" in update_msg and "symbols" in update_msg["configuration"]:
+                    from core.live_runner import live_runner
                     logger.info(f"Broadcasting configuration update: {len(update_msg['configuration']['symbols'])} symbols, active: {live_runner.active}")
                 msg_str = json.dumps(update_msg)
 
