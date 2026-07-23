@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import yaml
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -210,6 +211,45 @@ def read_health():
         "config_err": config_err,
         "resolved_paths": resolved_paths
     }
+
+@app.post("/api/trading/exit/{symbol}")
+async def manual_exit_position(symbol: str):
+    """Manually close an active position at current LTP. Uses the same code path as SL/TP exits."""
+    from fastapi import HTTPException
+    from providers.market.dhan.models import MarketPacket
+
+    symbol = symbol.strip().upper()
+
+    if not live_runner.active:
+        raise HTTPException(status_code=400, detail="Live runner is not active")
+
+    strat = live_runner.strategies.get(symbol)
+    if strat is None:
+        raise HTTPException(status_code=404, detail=f"No strategy found for symbol: {symbol}")
+
+    if strat.active_trade is None:
+        raise HTTPException(status_code=404, detail=f"No active position for symbol: {symbol}")
+
+    if strat.active_trade.get("exit_order_pending"):
+        raise HTTPException(status_code=409, detail=f"Exit already in progress for {symbol}")
+
+    # Use last known LTP; fall back to entry price if no tick received yet
+    ltp = live_runner.last_ohlc.get(symbol, {}).get("close") or strat.active_trade["entry_price"]
+
+    # Build a minimal synthetic packet — same as what SL/TP code path receives
+    now_ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).replace(tzinfo=None)
+    packet = MarketPacket(
+        packet_type="Quote",
+        exchange_segment="NSE_EQ",
+        security_id=symbol,
+        timestamp=now_ist,
+        ltp=ltp,
+        close=ltp,
+    )
+
+    logger.info(f"[Manual Exit] Triggered for {symbol} at Rs.{ltp:.2f}")
+    await strat._close_position(packet, reason="MANUAL_EXIT", override_price=ltp)
+    return {"status": "success", "symbol": symbol, "exit_price": ltp, "message": f"Manual exit triggered for {symbol} at Rs.{ltp:.2f}"}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

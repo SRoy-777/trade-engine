@@ -73,6 +73,8 @@ const App: React.FC = () => {
   const [leverage, setLeverage] = useState<number>(5);
   const [allocationStrategy, setAllocationStrategy] = useState<"SINGLE_STOCK" | "PERCENTAGE_RANKED">("SINGLE_STOCK");
   const [weights, setWeights] = useState<number[]>([0.5, 0.3, 0.2]);
+  // Manual exit state: null = idle, symbol string = confirming, symbol+"_loading" = in progress
+  const [exitState, setExitState] = useState<string | null>(null);
   const [enableLiveStocks, setEnableLiveStocks] = useState<boolean>(false);
 
   // Settings tab form states
@@ -1101,6 +1103,56 @@ const App: React.FC = () => {
                         <span className={`text-xs font-mono font-bold block ${pnlPct >= 0 ? "text-emerald-500" : "text-rose-450"}`}>
                           {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%
                         </span>
+                      </div>
+
+                      {/* Manual Exit Button */}
+                      <div className="flex flex-col items-end justify-center">
+                        {exitState === `${pos.symbol}_loading` ? (
+                          <button disabled className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-900/30 border border-rose-700/40 text-rose-400 text-[10px] font-bold cursor-not-allowed opacity-60">
+                            <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                            Exiting...
+                          </button>
+                        ) : exitState === pos.symbol ? (
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-[9px] text-rose-400 font-bold">Confirm exit?</span>
+                            <div className="flex gap-1">
+                              <button
+                                id={`confirm-exit-${pos.symbol}`}
+                                onClick={async () => {
+                                  setExitState(`${pos.symbol}_loading`);
+                                  try {
+                                    const res = await fetch(`/api/trading/exit/${pos.symbol}`, { method: "POST" });
+                                    const data = await res.json();
+                                    if (res.ok) {
+                                      addToast(`Exited ${pos.symbol} at ₹${data.exit_price?.toFixed(2) ?? "--"}`, "success");
+                                    } else {
+                                      addToast(`Exit failed: ${data.detail || "Unknown error"}`, "error");
+                                    }
+                                  } catch (e) {
+                                    addToast(`Exit request failed`, "error");
+                                  } finally {
+                                    setExitState(null);
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-black transition-colors"
+                              >Yes, Exit</button>
+                              <button
+                                id={`cancel-exit-${pos.symbol}`}
+                                onClick={() => setExitState(null)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 text-[10px] font-bold transition-colors"
+                              >Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            id={`exit-${pos.symbol}`}
+                            onClick={() => setExitState(pos.symbol)}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-900/20 hover:bg-rose-900/40 border border-rose-700/30 hover:border-rose-600/60 text-rose-400 hover:text-rose-300 text-[10px] font-bold transition-all duration-150"
+                          >
+                            <XCircle className="w-3 h-3" />
+                            Exit
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
