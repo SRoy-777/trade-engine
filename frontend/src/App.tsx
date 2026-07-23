@@ -73,7 +73,7 @@ const App: React.FC = () => {
   const [leverage, setLeverage] = useState<number>(5);
   const [allocationStrategy, setAllocationStrategy] = useState<"SINGLE_STOCK" | "PERCENTAGE_RANKED">("SINGLE_STOCK");
   const [weights, setWeights] = useState<number[]>([0.5, 0.3, 0.2]);
-  const [enableLiveStocks, setEnableLiveStocks] = useState<boolean>(false);
+  const [enableLiveStocks, setEnableLiveStocks] = useState<boolean>(true);
 
   // Settings tab form states
   const [refreshInterval, setRefreshInterval] = useState<number>(1000);

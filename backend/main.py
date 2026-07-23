@@ -148,34 +148,9 @@ app.include_router(api_router)
 @app.get("/health")
 def read_health():
     import traceback
-    import base64
-    import json
-    import datetime
-    
     config_err = None
     resolved_paths = []
     yaml_raw = None
-    
-    # Check Dhan Access Token expiration
-    token = os.getenv("ACCESS_TOKEN", "")
-    token_exp = "No Token Found"
-    is_expired = True
-    try:
-        if token and len(token.split(".")) >= 2:
-            payload_b64 = token.split(".")[1]
-            payload_b64 += "=" * ((4 - len(payload_b64) % 4) % 4)
-            payload_bytes = base64.b64decode(payload_b64)
-            payload_data = json.loads(payload_bytes.decode("utf-8"))
-            exp_timestamp = payload_data.get("exp")
-            if exp_timestamp:
-                exp_dt = datetime.datetime.fromtimestamp(exp_timestamp, datetime.timezone.utc)
-                ist_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-                exp_dt_ist = exp_dt.astimezone(ist_tz)
-                token_exp = exp_dt_ist.strftime("%Y-%m-%d %H:%M:%S IST")
-                is_expired = datetime.datetime.now(datetime.timezone.utc) > exp_dt
-    except Exception as e:
-        token_exp = f"Error decoding: {e}"
-
     try:
         config_path = "configs/orb.yaml"
         if not os.path.exists(config_path) and os.path.exists(os.path.join("..", config_path)):
@@ -201,9 +176,6 @@ def read_health():
         "status": "running",
         "engine": "Trade Engine Platform",
         "live_runner_active": live_runner.active,
-        "dhan_connected": live_runner.connection_ok if live_runner.active else False,
-        "token_expires_at": token_exp,
-        "token_expired": is_expired,
         "symbols_tracked": len(live_runner.symbols) if live_runner.active else 0,
         "symbols": live_runner.symbols if live_runner.active else [],
         "yaml_raw_symbols": yaml_raw,
