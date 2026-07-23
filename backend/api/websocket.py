@@ -118,6 +118,8 @@ class WebSocketBroadcaster:
                         continue
                         
                 update_msg = self._build_update_message()
+                if "configuration" in update_msg and "symbols" in update_msg["configuration"]:
+                    logger.info(f"Broadcasting configuration update: {len(update_msg['configuration']['symbols'])} symbols, active: {live_runner.active}")
                 msg_str = json.dumps(update_msg)
 
                 # Broadcast to all clients
