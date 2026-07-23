@@ -146,7 +146,10 @@ class LiveTradingRunner:
         self.connection_ok = True
 
         # 4. Connect broker fills to notify the UI instantly
+        original_callback = self.broker._fill_callback
         async def on_broker_fill(fill_event: Dict[str, Any]):
+            if original_callback:
+                await original_callback(fill_event)
             self.broadcast_update()
 
         self.broker.register_fill_callback(on_broker_fill)

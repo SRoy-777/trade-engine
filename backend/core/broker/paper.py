@@ -86,13 +86,19 @@ class PaperBroker(BaseBroker):
     def get_portfolio(self) -> Dict[str, Any]:
         """Calculates and returns current assets valuation in INR."""
         holdings_value = 0.0
+        margin_locked = 0.0
+        margin_multiplier = self.sim_config.MARGIN_MULTIPLIER if self.product_type == "INTRADAY" else 1.0
+
         for symbol, pos in self._positions.items():
             current_price = self._last_prices.get(symbol, pos["avg_price"])
             holdings_value += pos["qty"] * current_price
+            margin_locked += abs(pos["qty"] * current_price) / margin_multiplier
 
         total_value = self._cash + holdings_value
+        available_cash = max(0.0, total_value - margin_locked)
+
         return {
-            "cash_inr": self._cash,
+            "cash_inr": available_cash,
             "holdings_market_value_inr": holdings_value,
             "net_asset_value_inr": total_value,
             "positions": self._positions,
@@ -402,11 +408,6 @@ class PaperBroker(BaseBroker):
         self.total_spread_cost_inr += abs(ref_price - packet.ltp) * fill_qty
         self.total_market_impact_inr += market_impact * fill_qty
         
-        if side == "BUY":
-            self._cash -= (txn_value + charges)
-        else:
-            self._cash += (txn_value - charges)
-
         if symbol not in self._positions:
             self._positions[symbol] = {"qty": 0.0, "avg_price": 0.0}
             
@@ -416,6 +417,18 @@ class PaperBroker(BaseBroker):
         
         trade_qty = fill_qty if side == "BUY" else -fill_qty
         new_qty = curr_qty + trade_qty
+        
+        # Calculate realized P&L on reduction/close
+        realized_pnl = 0.0
+        if curr_qty > 0 and trade_qty < 0: # reducing a long position
+            closed_qty = min(curr_qty, abs(trade_qty))
+            realized_pnl = (fill_price - curr_avg) * closed_qty
+        elif curr_qty < 0 and trade_qty > 0: # reducing a short position
+            closed_qty = min(abs(curr_qty), trade_qty)
+            realized_pnl = (curr_avg - fill_price) * closed_qty
+            
+        # Core cash balance only changes by realized P&L and transaction fees
+        self._cash += realized_pnl - charges
         
         if curr_qty == 0:
             pos["avg_price"] = fill_price
