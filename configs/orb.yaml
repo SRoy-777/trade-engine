@@ -12,7 +12,7 @@ square_off: "15:15"
 entry_start: "09:30"
 entry_end: "14:30"
 enable_trailing_sl: false
-enable_persistence: false   # set to true once R2 secrets are added to HF Space
+enable_persistence: true   # R2 secrets confirmed in HF Space
 trailing_trigger_rr: 2.0
 trailing_step_rr: 0.5
 max_opening_range_pct: 0.00  # Max opening range width as a percent of price (e.g. 2.0 for 2%). 0.0 to disable.
