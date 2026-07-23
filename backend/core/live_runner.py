@@ -475,6 +475,15 @@ class LiveTradingRunner:
         if self.strategies:
             for sym, strat in self.strategies.items():
                 ohlc = self.last_ohlc.get(sym, {"open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0, "volume": 0})
+                
+                # Create a JSON-serializable copy of active_trade if present
+                active_detail = None
+                if strat.active_trade is not None:
+                    active_detail = dict(strat.active_trade)
+                    for k, v in active_detail.items():
+                        if isinstance(v, datetime):
+                            active_detail[k] = v.isoformat()
+                            
                 symbols_status[sym] = {
                     "symbol": sym,
                     "range_high": strat.curr_day_high,
@@ -482,7 +491,7 @@ class LiveTradingRunner:
                     "range_established": strat.opening_range_set,
                     "trade_taken": strat.trade_taken_today,
                     "active_trade": strat.active_trade is not None,
-                    "active_trade_detail": strat.active_trade,
+                    "active_trade_detail": active_detail,
                     "is_active": strat.is_active,
                     "warning": sym in self.warning_symbols,
                     "last_ltp": self.broker._last_prices.get(sym, 0.0) if self.broker else 0.0,
