@@ -86,6 +86,7 @@ class PaperBroker(BaseBroker):
     def get_portfolio(self) -> Dict[str, Any]:
         """Calculates and returns current assets valuation in INR."""
         holdings_value = 0.0
+        unrealized_pnl = 0.0
         margin_locked = 0.0
         margin_multiplier = self.sim_config.MARGIN_MULTIPLIER if self.product_type == "INTRADAY" else 1.0
 
@@ -93,8 +94,14 @@ class PaperBroker(BaseBroker):
             current_price = self._last_prices.get(symbol, pos["avg_price"])
             holdings_value += pos["qty"] * current_price
             margin_locked += abs(pos["qty"] * current_price) / margin_multiplier
+            
+            # Calculate unrealized P&L based on direction
+            if pos["qty"] > 0:
+                unrealized_pnl += (current_price - pos["avg_price"]) * pos["qty"]
+            elif pos["qty"] < 0:
+                unrealized_pnl += (pos["avg_price"] - current_price) * abs(pos["qty"])
 
-        total_value = self._cash + holdings_value
+        total_value = self._cash + unrealized_pnl
         available_cash = max(0.0, total_value - margin_locked)
 
         return {

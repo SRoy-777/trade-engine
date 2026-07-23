@@ -775,11 +775,11 @@ const App: React.FC = () => {
               <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Intraday Account Ledger</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
                 {[
-                  { label: "Net Asset Value (NAV)", val: strategyReport?.net_asset_value_inr || capital, color: "text-white", bg: "bg-indigo-500/10 text-indigo-400", icon: TrendingUp, sub: "Equity Curve Peak" },
-                  { label: "Available Cash Balance", val: strategyReport?.cash_inr || capital, color: "text-slate-200", bg: "bg-cyan-500/10 text-cyan-400", icon: DollarSign, sub: "Unused Capital" },
+                  { label: "Net Asset Value (NAV)", val: strategyReport ? strategyReport.net_asset_value_inr : capital, color: "text-white", bg: "bg-indigo-500/10 text-indigo-400", icon: TrendingUp, sub: "Equity Curve Peak" },
+                  { label: "Available Cash Balance", val: strategyReport ? strategyReport.cash_inr : capital, color: "text-slate-200", bg: "bg-cyan-500/10 text-cyan-400", icon: DollarSign, sub: "Unused Capital" },
                   { label: "Used Intraday Margin", val: utilizedMargin, color: "text-slate-200", bg: "bg-amber-500/10 text-amber-400", icon: Layers, sub: "Active Exposure" },
                   { label: "Reserved Margin (10%)", val: utilizedMargin * 0.10, color: "text-slate-350", bg: "bg-slate-800 text-slate-400", icon: ShieldAlert, sub: "Buffered Lock" },
-                  { label: "Remaining Margin", val: (strategyReport?.cash_inr || capital) - utilizedMargin, color: "text-slate-300", bg: "bg-purple-500/10 text-purple-400", icon: TrendingUp, sub: "Free Buying Power" },
+                  { label: "Remaining Margin", val: (strategyReport ? strategyReport.cash_inr : capital) - utilizedMargin, color: "text-slate-300", bg: "bg-purple-500/10 text-purple-400", icon: TrendingUp, sub: "Free Buying Power" },
                 ].map((item, idx) => {
                   const Icon = item.icon;
                   return (
