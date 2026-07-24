@@ -161,6 +161,7 @@ class LiveTradingRunner:
                 if db_manager._conn is not None:
                     db_manager.close()
                 db_manager.connect()
+                self._persistence.invalidate_conn()  # force re-acquire fresh connection
 
                 # Restore cash balance
                 saved_cash = self._persistence.load_cash()

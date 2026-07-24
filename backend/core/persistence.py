@@ -37,7 +37,8 @@ def _make_r2_client():
         access_key  = os.environ.get("R2_ACCESS_KEY_ID", "")
         secret_key  = os.environ.get("R2_SECRET_ACCESS_KEY", "")
         if not (account_id and access_key and secret_key):
-            logger.warning("[Persistence] R2 credentials not set. R2 sync disabled.")
+            logger.error("[Persistence] R2 credentials not set — R2 sync DISABLED. "
+                         "Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY env vars.")
             return None
         endpoint = f"https://{account_id}.r2.cloudflarestorage.com"
         client = boto3.client(
@@ -47,12 +48,13 @@ def _make_r2_client():
             aws_secret_access_key=secret_key,
             region_name="auto",
         )
+        logger.info(f"[Persistence] R2 client initialised. Endpoint: {endpoint}")
         return client
     except ImportError:
-        logger.warning("[Persistence] boto3 not installed. R2 sync disabled.")
+        logger.error("[Persistence] boto3 not installed — R2 sync DISABLED.")
         return None
     except Exception as e:
-        logger.warning(f"[Persistence] Failed to initialise R2 client: {e}")
+        logger.error(f"[Persistence] Failed to initialise R2 client: {e}")
         return None
 
 
@@ -73,20 +75,28 @@ class PersistenceManager:
         self._r2      = _make_r2_client()
         self._db_path = self._resolve_db_path()
         self._conn    = None   # obtained lazily from the singleton manager
+        logger.info(f"[Persistence] DB path resolved to: {self._db_path} | "
+                    f"R2 enabled: {self._r2 is not None} | Bucket: {self._bucket}")
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _resolve_db_path(self) -> str:
-        """Find the DuckDB file path used by the app."""
+        """Find the DuckDB file path — always prefer settings to stay in sync with the app."""
+        try:
+            from config.config import settings
+            path = settings.DATABASE_PATH
+            logger.info(f"[Persistence] Using DATABASE_PATH from settings: {path}")
+            return path
+        except Exception:
+            pass
+        # Fallback chain
         for candidate in [
             os.environ.get("DATABASE_PATH", ""),
             "storage/trade_engine.db",
-            "../storage/trade_engine.db",
-            "storage_engine/trade_engine.db",
         ]:
-            if candidate and os.path.exists(os.path.dirname(candidate) or "."):
+            if candidate:
                 return candidate
         return "storage/trade_engine.db"
 
@@ -106,54 +116,71 @@ class PersistenceManager:
         ist = timezone(timedelta(hours=5, minutes=30))
         return datetime.now(ist).replace(tzinfo=None)
 
+    def invalidate_conn(self):
+        """Call this after db_manager is reconnected so we pick up the new connection."""
+        self._conn = None
+
     # ------------------------------------------------------------------
     # R2 sync (blocking — always call via run_in_executor)
     # ------------------------------------------------------------------
 
     def _upload_db_sync(self):
-        """Upload the local DuckDB file to R2 (blocking)."""
+        """Upload the local DuckDB file to R2 (blocking, no DuckDB calls here)."""
         if not self._r2:
+            logger.error("[Persistence] _upload_db_sync called but R2 client is None")
             return
         try:
             db_path = self._db_path
-            # Flush DuckDB WAL before uploading
-            conn = self._get_conn()
-            if conn:
-                conn.execute("CHECKPOINT")
+            if not os.path.exists(db_path):
+                logger.error(f"[Persistence] DB file not found for upload: {db_path} "
+                             f"(CWD: {os.getcwd()})")
+                return
+            size = os.path.getsize(db_path)
             with open(db_path, "rb") as f:
                 self._r2.put_object(Bucket=self._bucket, Key=self.R2_DB_KEY, Body=f)
-            logger.info("[Persistence] DuckDB state synced to R2 successfully.")
+            logger.info(f"[Persistence] DuckDB ({size} bytes) synced to R2 at "
+                        f"s3://{self._bucket}/{self.R2_DB_KEY}")
         except Exception as e:
-            logger.warning(f"[Persistence] R2 upload failed (state still in DuckDB): {e}")
+            logger.error(f"[Persistence] R2 upload FAILED: {type(e).__name__}: {e}")
 
     def _download_db_sync(self):
         """Download the DuckDB file from R2 on startup (blocking)."""
         if not self._r2:
-            logger.info("[Persistence] R2 not configured — starting with fresh/existing local DB.")
+            logger.info("[Persistence] R2 not configured — using local DB.")
             return
         try:
-            db_path = self._db_path
-            os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-            self._r2.download_file(self._bucket, self.R2_DB_KEY, db_path)
-            logger.info(f"[Persistence] Restored DuckDB state from R2 → {db_path}")
+            db_dir = os.path.dirname(self._db_path)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+            self._r2.download_file(self._bucket, self.R2_DB_KEY, self._db_path)
+            size = os.path.getsize(self._db_path)
+            logger.info(f"[Persistence] Restored DuckDB ({size} bytes) from R2 → {self._db_path}")
         except Exception as e:
-            # Key not found (first run) is expected — not an error
-            logger.info(f"[Persistence] No existing DB on R2 (first run or new bucket): {e}")
+            logger.info(f"[Persistence] No existing DB on R2 (first run OK): {type(e).__name__}: {e}")
 
     # ------------------------------------------------------------------
     # Public async API
     # ------------------------------------------------------------------
 
     async def restore_from_r2(self):
-        """
-        Download the DuckDB file from R2.
-        Call once at startup BEFORE connecting to DuckDB.
-        """
+        """Download the DuckDB file from R2 on startup BEFORE connecting to DuckDB."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._download_db_sync)
 
     async def _sync_to_r2(self):
-        """Background async task: upload DB to R2 after a write."""
+        """
+        Checkpoint DuckDB (in asyncio thread, safe) then upload file in executor.
+        Called after every write to ensure R2 is always up to date.
+        """
+        # CHECKPOINT must run on the same thread as other DuckDB operations
+        try:
+            conn = self._get_conn()
+            if conn:
+                conn.execute("CHECKPOINT")
+        except Exception as e:
+            logger.warning(f"[Persistence] CHECKPOINT failed (upload will still attempt): {e}")
+
+        # File upload is blocking I/O — run in executor
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._upload_db_sync)
 
@@ -164,19 +191,33 @@ class PersistenceManager:
     async def on_entry(self, symbol: str, active_trade: Dict[str, Any], cash: float):
         """
         Persist an open position to DuckDB and sync to R2.
-        Called in a background task after active_trade is set in memory.
+        Called as a background task after active_trade is set in memory.
         """
         try:
             conn = self._get_conn()
             if conn is None:
+                logger.error("[Persistence] on_entry: DuckDB connection is None — skipping")
                 return
             now = self._now_ist()
             direction = "LONG" if active_trade.get("side") == "BUY" else "SHORT"
+
+            # DuckDB upsert syntax (ON CONFLICT DO UPDATE SET)
             conn.execute("""
-                INSERT OR REPLACE INTO paper_positions
+                INSERT INTO paper_positions
                     (symbol, direction, entry_time, entry_price, qty,
                      stop_loss, take_profit, setup, entry_fees, order_id, session_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (symbol) DO UPDATE SET
+                    direction   = EXCLUDED.direction,
+                    entry_time  = EXCLUDED.entry_time,
+                    entry_price = EXCLUDED.entry_price,
+                    qty         = EXCLUDED.qty,
+                    stop_loss   = EXCLUDED.stop_loss,
+                    take_profit = EXCLUDED.take_profit,
+                    setup       = EXCLUDED.setup,
+                    entry_fees  = EXCLUDED.entry_fees,
+                    order_id    = EXCLUDED.order_id,
+                    session_date = EXCLUDED.session_date
             """, [
                 symbol,
                 direction,
@@ -191,19 +232,21 @@ class PersistenceManager:
                 now.date(),
             ])
             await self._persist_cash(cash, conn)
-            logger.info(f"[Persistence] Open position saved: {symbol} {direction}")
-            asyncio.create_task(self._sync_to_r2())
+            logger.info(f"[Persistence] Open position saved to DuckDB: {symbol} {direction} "
+                        f"entry=Rs.{active_trade.get('entry_price', 0):.2f}")
+            await self._sync_to_r2()
         except Exception as e:
-            logger.warning(f"[Persistence] on_entry failed (trade unaffected): {e}")
+            logger.error(f"[Persistence] on_entry FAILED for {symbol}: {type(e).__name__}: {e}")
 
     async def on_exit(self, trade_record: Dict[str, Any], cash: float):
         """
         Persist a completed trade and remove the open position from DuckDB.
-        Called in a background task after trade_history.append() in memory.
+        Called as a background task after trade_history.append() in memory.
         """
         try:
             conn = self._get_conn()
             if conn is None:
+                logger.error("[Persistence] on_exit: DuckDB connection is None — skipping")
                 return
             now = self._now_ist()
             conn.execute("""
@@ -233,17 +276,21 @@ class PersistenceManager:
             conn.execute("DELETE FROM paper_positions WHERE symbol = ?",
                          [trade_record.get("Symbol", "")])
             await self._persist_cash(cash, conn)
-            logger.info(f"[Persistence] Closed trade saved: {trade_record.get('Symbol')} "
+            logger.info(f"[Persistence] Closed trade saved to DuckDB: "
+                        f"{trade_record.get('Symbol')} "
                         f"Net PnL: Rs.{trade_record.get('Net_PnL', 0):.2f}")
-            asyncio.create_task(self._sync_to_r2())
+            await self._sync_to_r2()
         except Exception as e:
-            logger.warning(f"[Persistence] on_exit failed (trade unaffected): {e}")
+            logger.error(f"[Persistence] on_exit FAILED: {type(e).__name__}: {e}")
 
     async def _persist_cash(self, cash: float, conn):
         """Update cash balance row (upsert)."""
         conn.execute("""
-            INSERT OR REPLACE INTO paper_portfolio (id, cash_inr, updated_at)
+            INSERT INTO paper_portfolio (id, cash_inr, updated_at)
             VALUES (1, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                cash_inr   = EXCLUDED.cash_inr,
+                updated_at = EXCLUDED.updated_at
         """, [cash, self._now_ist()])
 
     # ------------------------------------------------------------------
@@ -251,10 +298,7 @@ class PersistenceManager:
     # ------------------------------------------------------------------
 
     def load_open_positions(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Read paper_positions table → dict keyed by symbol.
-        Returns the active_trade dict that ORBStrategy expects.
-        """
+        """Read paper_positions → dict keyed by symbol in active_trade format."""
         result = {}
         try:
             conn = self._get_conn()
@@ -273,7 +317,8 @@ class PersistenceManager:
                     "side": side,
                     "qty": qty,
                     "entry_price": entry_price,
-                    "entry_time": entry_time if isinstance(entry_time, datetime) else datetime.fromisoformat(str(entry_time)),
+                    "entry_time": entry_time if isinstance(entry_time, datetime)
+                                  else datetime.fromisoformat(str(entry_time)),
                     "setup": setup,
                     "stop_loss": sl,
                     "take_profit": tp,
@@ -289,13 +334,11 @@ class PersistenceManager:
             if result:
                 logger.info(f"[Persistence] Restored {len(result)} open position(s): {list(result.keys())}")
         except Exception as e:
-            logger.warning(f"[Persistence] load_open_positions failed: {e}")
+            logger.error(f"[Persistence] load_open_positions FAILED: {type(e).__name__}: {e}")
         return result
 
     def load_trade_history(self) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Read paper_trades table → dict of lists keyed by symbol.
-        """
+        """Read paper_trades → dict of lists keyed by symbol."""
         result: Dict[str, List[Dict[str, Any]]] = {}
         try:
             conn = self._get_conn()
@@ -337,7 +380,7 @@ class PersistenceManager:
             if total:
                 logger.info(f"[Persistence] Restored {total} historical trade(s) from DuckDB.")
         except Exception as e:
-            logger.warning(f"[Persistence] load_trade_history failed: {e}")
+            logger.error(f"[Persistence] load_trade_history FAILED: {type(e).__name__}: {e}")
         return result
 
     def load_cash(self) -> Optional[float]:
@@ -353,5 +396,5 @@ class PersistenceManager:
                 logger.info(f"[Persistence] Restored cash balance: Rs.{row[0]:,.2f}")
                 return row[0]
         except Exception as e:
-            logger.warning(f"[Persistence] load_cash failed: {e}")
+            logger.error(f"[Persistence] load_cash FAILED: {type(e).__name__}: {e}")
         return None
