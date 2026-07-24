@@ -32,7 +32,44 @@ async def lifespan(app: FastAPI):
     # Startup Initialization
     logger.info("Initializing Trade Engine backend services...")
     
-    # 1. Connect to DuckDB
+    # 0. Pre-download DuckDB state from R2 if persistence is enabled
+    #    This MUST happen before db_manager.connect() so DuckDB opens the restored file
+    try:
+        _pre_yaml_path = "configs/orb.yaml"
+        if not os.path.exists(_pre_yaml_path):
+            _pre_yaml_path = os.path.join("..", _pre_yaml_path)
+        if os.path.exists(_pre_yaml_path):
+            with open(_pre_yaml_path) as _f:
+                _pre_cfg = yaml.safe_load(_f) or {}
+            if _pre_cfg.get("enable_persistence", False):
+                logger.info("[Startup] Persistence enabled — pre-downloading DuckDB from R2...")
+                _r2_account  = os.environ.get("R2_ACCOUNT_ID", "")
+                _r2_key      = os.environ.get("R2_ACCESS_KEY_ID", "")
+                _r2_secret   = os.environ.get("R2_SECRET_ACCESS_KEY", "")
+                _r2_bucket   = os.environ.get("R2_BUCKET_NAME", "trades-trade-engine")
+                _db_path     = settings.DATABASE_PATH
+                if _r2_account and _r2_key and _r2_secret:
+                    import boto3 as _boto3
+                    _r2_client = _boto3.client(
+                        "s3",
+                        endpoint_url=f"https://{_r2_account}.r2.cloudflarestorage.com",
+                        aws_access_key_id=_r2_key,
+                        aws_secret_access_key=_r2_secret,
+                        region_name="auto",
+                    )
+                    os.makedirs(os.path.dirname(_db_path) or ".", exist_ok=True)
+                    try:
+                        _r2_client.download_file(_r2_bucket, "state/trade_engine.db", _db_path)
+                        logger.info(f"[Startup] DuckDB state restored from R2 → {_db_path} "
+                                    f"({os.path.getsize(_db_path)} bytes)")
+                    except Exception as _dl_err:
+                        logger.info(f"[Startup] No existing DB on R2 (first run OK): {_dl_err}")
+                else:
+                    logger.error("[Startup] Persistence enabled but R2 credentials missing in env")
+    except Exception as _pre_err:
+        logger.error(f"[Startup] Pre-download block failed: {_pre_err}")
+
+    # 1. Connect to DuckDB (opens restored file if downloaded above)
     db_manager.connect()
     
     # 2. Register storage subscriber to EventBus at Priority 3 (Silver Layer)
@@ -102,7 +139,8 @@ async def lifespan(app: FastAPI):
                 "allocation_weights": yaml_config.get("allocation_weights", [0.5, 0.3, 0.2]),
                 "capital": yaml_config.get("capital", 100000.0),
                 "leverage": yaml_config.get("leverage", 5.0),
-                "enable_live_stocks": yaml_config.get("enable_live_stocks", False)
+                "enable_live_stocks": yaml_config.get("enable_live_stocks", False),
+                "enable_persistence": yaml_config.get("enable_persistence", False),
             }
             
             def ui_broadcast(update_msg):

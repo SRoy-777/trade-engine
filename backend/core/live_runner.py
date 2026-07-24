@@ -151,17 +151,10 @@ class LiveTradingRunner:
             try:
                 from core.persistence import PersistenceManager
                 self._persistence = PersistenceManager()
-                logger.info("[Live Runner] Persistence enabled — restoring state from R2...")
+                logger.info("[Live Runner] Persistence enabled — restoring state from DuckDB...")
 
-                # Download DuckDB from R2 BEFORE connecting (must run first)
-                await self._persistence.restore_from_r2()
-
-                # Reconnect DuckDB so it picks up the downloaded file
-                from storage_engine.connection import db_manager
-                if db_manager._conn is not None:
-                    db_manager.close()
-                db_manager.connect()
-                self._persistence.invalidate_conn()  # force re-acquire fresh connection
+                # DuckDB was already restored from R2 in main.py lifespan before connecting.
+                # No reconnect needed — just use the existing connection.
 
                 # Restore cash balance
                 saved_cash = self._persistence.load_cash()
