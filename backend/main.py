@@ -256,6 +256,61 @@ async def manual_exit_position(symbol: str):
     await strat._close_position(packet, reason="MANUAL_EXIT", override_price=ltp)
     return {"status": "success", "symbol": symbol, "exit_price": ltp, "message": f"Manual exit triggered for {symbol} at Rs.{ltp:.2f}"}
 
+@app.get("/api/diagnostic/persistence")
+async def persistence_diagnostic():
+    """Diagnose the persistence layer — shows DB path, R2 status, record counts."""
+    result = {
+        "persistence_active": False,
+        "r2_enabled": False,
+        "db_path": None,
+        "db_file_exists": False,
+        "db_file_size_bytes": None,
+        "cwd": os.getcwd(),
+        "paper_trades_count": None,
+        "paper_positions_count": None,
+        "paper_portfolio_cash": None,
+        "r2_bucket": None,
+        "r2_objects": [],
+        "error": None,
+    }
+    try:
+        pm = getattr(live_runner, "_persistence", None)
+        if pm is None:
+            result["error"] = "PersistenceManager not initialised on live_runner (enable_persistence may be false or startup failed)"
+            return result
+
+        result["persistence_active"] = True
+        result["r2_enabled"] = pm._r2 is not None
+        result["r2_bucket"] = pm._bucket
+        result["db_path"] = pm._db_path
+
+        import os as _os
+        result["db_file_exists"] = _os.path.exists(pm._db_path)
+        if result["db_file_exists"]:
+            result["db_file_size_bytes"] = _os.path.getsize(pm._db_path)
+
+        conn = pm._get_conn()
+        if conn:
+            result["paper_trades_count"] = conn.execute("SELECT COUNT(*) FROM paper_trades").fetchone()[0]
+            result["paper_positions_count"] = conn.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0]
+            row = conn.execute("SELECT cash_inr FROM paper_portfolio WHERE id = 1").fetchone()
+            result["paper_portfolio_cash"] = row[0] if row else None
+
+        if pm._r2:
+            try:
+                resp = pm._r2.list_objects_v2(Bucket=pm._bucket)
+                result["r2_objects"] = [
+                    {"key": o["Key"], "size": o["Size"], "last_modified": str(o["LastModified"])}
+                    for o in resp.get("Contents", [])
+                ]
+            except Exception as e:
+                result["r2_objects"] = [f"list failed: {e}"]
+
+    except Exception as e:
+        result["error"] = f"{type(e).__name__}: {e}"
+
+    return result
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket_broadcaster.connect(websocket)
