@@ -193,11 +193,12 @@ class PaperBroker(BaseBroker):
                 order["qty"] = qty
                 order["remaining_qty"] = qty
 
-            # 3. Enforce margin checks
+            # 3. Enforce margin checks — skip for closing trades (position already held)
             margin_multiplier = self.sim_config.MARGIN_MULTIPLIER if self.product_type == "INTRADAY" else 1.0
             required_margin = (qty * price) / margin_multiplier
-            # On sell execution we don't buy, but we check if we hold the position for DELIVERY sells
-            if side == "BUY" and required_margin > self._cash:
+            existing_qty = self._positions.get(symbol, {}).get("qty", 0)
+            is_closing_trade = (side == "BUY" and existing_qty < 0) or (side == "SELL" and existing_qty > 0)
+            if side == "BUY" and not is_closing_trade and required_margin > self._cash:
                 order["status"] = "REJECTED"
                 order["reason"] = f"Insufficient margin. Required: Rs.{required_margin:.2f}, Available: Rs.{self._cash:.2f}"
                 dhan_logger.warning(f"[Paper Broker] Order {order_id} rejected: {order['reason']}")

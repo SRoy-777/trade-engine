@@ -451,7 +451,12 @@ class ORBStrategy(BaseStrategy):
         trade["temp_exit_price"] = exit_price
 
         dhan_logger.info(f"[ORB] Exit Triggered: {reason} order submitted for {qty} shares at ₹{exit_price:.2f}")
-        await self.submit_order(self.symbol, side, qty, price=exit_price, order_type="MARKET")
+        try:
+            await self.submit_order(self.symbol, side, qty, price=exit_price, order_type="MARKET")
+        except Exception as e:
+            # Reset pending flag so next tick or manual retry can attempt exit again
+            trade["exit_order_pending"] = False
+            dhan_logger.warning(f"[ORB] Exit order submission failed for {self.symbol}: {e} — exit_order_pending reset for retry")
 
     async def on_order_fill(self, order_id: str, symbol: str, side: str, qty: int, price: float) -> None:
         if symbol != self.symbol:

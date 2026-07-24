@@ -230,8 +230,13 @@ async def manual_exit_position(symbol: str):
     if strat.active_trade is None:
         raise HTTPException(status_code=404, detail=f"No active position for symbol: {symbol}")
 
+    # If a previous exit attempt got stuck (exit_order_pending=True but no fill arrived),
+    # force-clear the flag so we can retry. Safe because:
+    # - If the stuck order fills later, on_order_fill() checks active_trade is not None first
+    # - By then active_trade will be None (this exit will have closed it), so the late fill is ignored
     if strat.active_trade.get("exit_order_pending"):
-        raise HTTPException(status_code=409, detail=f"Exit already in progress for {symbol}")
+        logger.warning(f"[Manual Exit] Found stuck exit_order_pending for {symbol} — force-clearing to allow re-exit")
+        strat.active_trade["exit_order_pending"] = False
 
     # Use last known LTP; fall back to entry price if no tick received yet
     ltp = live_runner.last_ohlc.get(symbol, {}).get("close") or strat.active_trade["entry_price"]
