@@ -188,7 +188,7 @@ class LiveTradingRunner:
                         # Populate PaperBroker positions so portfolio matching works
                         if hasattr(self.broker, "_positions"):
                             self.broker._positions[sym] = {
-                                "qty": float(pos["qty"]) if pos["direction"] == "LONG" else -float(pos["qty"]),
+                                "qty": float(pos["qty"]) if pos["side"] == "BUY" else -float(pos["qty"]),
                                 "avg_price": float(pos["entry_price"])
                             }
                         
