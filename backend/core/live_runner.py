@@ -162,11 +162,18 @@ class LiveTradingRunner:
                     self.broker._cash = saved_cash
                     logger.info(f"[Live Runner] Cash restored: Rs.{saved_cash:,.2f}")
 
+                # Helper function to find strategy by symbol name
+                def find_strategy_by_symbol(symbol_name: str):
+                    for strat in self.strategies.values():
+                        if getattr(strat, "symbol", "").upper() == symbol_name.upper():
+                            return strat
+                    return None
+
                 # Restore open positions into strategy instances
                 open_positions = self._persistence.load_open_positions()
                 for sym, pos in open_positions.items():
-                    if sym in self.strategies:
-                        strat = self.strategies[sym]
+                    strat = find_strategy_by_symbol(sym)
+                    if strat:
                         strat.active_trade = pos
                         strat.trade_taken_today = True
                         
@@ -190,8 +197,10 @@ class LiveTradingRunner:
                 # Restore trade history into strategy instances
                 history_by_symbol = self._persistence.load_trade_history()
                 for sym, history in history_by_symbol.items():
-                    if sym in self.strategies:
-                        self.strategies[sym].trade_history = history
+                    strat = find_strategy_by_symbol(sym)
+                    if strat:
+                        strat.trade_history = history
+                        logger.info(f"[Live Runner] Restored {len(history)} trade history records for {sym}")
 
                 # Inject persistence manager into each strategy
                 for strat in self.strategies.values():
