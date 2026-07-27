@@ -204,15 +204,24 @@ async def run_simulation():
     last_logged_date = None
     ts = all_rows[-1]["datetime_parsed"]
 
+    nifty_daily_open = None
+    nifty_last_date = None
+
     for idx, r in enumerate(all_rows):
         symbol = r["symbol"]
         ts = r["datetime_parsed"]
+        curr_date = ts.date()
         
         if symbol == "NIFTY_50":
+            # Reset daily open price on a new date
+            if nifty_last_date is None or curr_date > nifty_last_date:
+                nifty_daily_open = float(r["open"])
+                nifty_last_date = curr_date
+            
             if hasattr(manager, "indices"):
                 manager.indices["NIFTY_50"] = {
                     "ltp": float(r["close"]),
-                    "open": float(r["open"])
+                    "open": nifty_daily_open if nifty_daily_open is not None else float(r["open"])
                 }
             continue
 
