@@ -166,8 +166,25 @@ class LiveTradingRunner:
                 open_positions = self._persistence.load_open_positions()
                 for sym, pos in open_positions.items():
                     if sym in self.strategies:
-                        self.strategies[sym].active_trade = pos
-                        self.strategies[sym].trade_taken_today = True
+                        strat = self.strategies[sym]
+                        strat.active_trade = pos
+                        strat.trade_taken_today = True
+                        
+                        # Populate strategy.positions dictionary so the UI can see it
+                        strat.positions[sym] = {
+                            "qty": float(pos["qty"]),
+                            "avg_price": float(pos["entry_price"]),
+                            "realized_pnl": 0.0,
+                            "unrealized_pnl": 0.0
+                        }
+                        
+                        # Populate PaperBroker positions so portfolio matching works
+                        if hasattr(self.broker, "_positions"):
+                            self.broker._positions[sym] = {
+                                "qty": float(pos["qty"]) if pos["direction"] == "LONG" else -float(pos["qty"]),
+                                "avg_price": float(pos["entry_price"])
+                            }
+                        
                         logger.info(f"[Live Runner] Restored open position for {sym} — SL/TP monitoring will resume on next tick")
 
                 # Restore trade history into strategy instances
