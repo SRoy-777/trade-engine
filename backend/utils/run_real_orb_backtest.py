@@ -264,7 +264,7 @@ async def run_simulation():
                 packet = MarketPacket(
                     packet_type="Quote",
                     exchange_segment="NSE_EQ",
-                    security_id=strat.symbol,
+                    security_id=str(strat.symbol),
                     ltp=float(last_row["close"]),
                     volume=int(last_row["volume"]),
                     timestamp=ts,
@@ -273,7 +273,8 @@ async def run_simulation():
                     low=float(last_row["low"]),
                     close=float(last_row["close"])
                 )
-                await strat._close_position(packet, "Final Backtest Close")
+                if hasattr(strat, "_close_position"):
+                    await getattr(strat, "_close_position")(packet, "Final Backtest Close")
                 await broker.on_tick(packet)
 
     portfolio = broker.get_portfolio()
@@ -296,7 +297,8 @@ async def run_simulation():
     # Gather master trades
     master_trades = []
     for strat in manager.strategies.values():
-        master_trades.extend(strat.trade_history)
+        if hasattr(strat, "trade_history"):
+            master_trades.extend(getattr(strat, "trade_history"))
 
     # Sort trades chronologically
     master_trades.sort(key=lambda x: x["Entry_Time"])
