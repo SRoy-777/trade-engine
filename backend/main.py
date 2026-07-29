@@ -240,6 +240,8 @@ def read_health():
         "status": "running",
         "engine": "Trade Engine Platform",
         "live_runner_active": live_runner.active,
+        "broker_mode": live_runner.broker_mode,
+        "capital": live_runner.capital,
         "dhan_connected": live_runner.connection_ok if live_runner.active else False,
         "token_expires_at": token_exp,
         "token_expired": is_expired,
