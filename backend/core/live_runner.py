@@ -31,6 +31,7 @@ class LiveTradingRunner:
         self.allocation_strategy = "SINGLE_STOCK"
         self.allocation_weights: List[float] = [0.5, 0.3, 0.2]
         self.capital = 100000.0
+        self.allocated_percentage = 100.0
         self.leverage = 5.0
         
         self.indices: Dict[str, Dict[str, Any]] = {
@@ -100,15 +101,18 @@ class LiveTradingRunner:
         self.allocation_strategy = config.get("allocation_strategy", "SINGLE_STOCK").upper()
         self.allocation_weights = [float(w) for w in config.get("allocation_weights", [0.50, 0.30, 0.20])]
         self.capital = float(config.get("capital", 100000.0))
+        self.allocated_percentage = float(config.get("allocated_percentage", 100.0))
         self.leverage = float(config.get("leverage", 5.0))
 
-        logger.info(f"[Live Runner] Starting multi-symbol ORB strategy. Symbols: {self.symbols}, Capital: Rs.{self.capital}")
+        active_capital = self.capital * (self.allocated_percentage / 100.0)
+
+        logger.info(f"[Live Runner] Starting multi-symbol ORB strategy. Symbols: {self.symbols}, Available Funds: Rs.{self.capital}, Percentage Allocated: {self.allocated_percentage}%, Active Capital Limit: Rs.{active_capital}")
 
         # 2. Initialize paper broker and risk components
         self.broker = PaperBroker(initial_cash_inr=self.capital, latency_ms=50.0)
         risk = RiskController(
-            max_capital_per_trade_inr=self.capital * self.leverage,
-            max_daily_loss_inr=self.capital * 0.1,  # 10% daily loss limit
+            max_capital_per_trade_inr=active_capital * self.leverage,
+            max_daily_loss_inr=active_capital * 0.1,  # 10% daily loss limit
             margin_leverage_multiplier=self.leverage
         )
         self.manager = StrategyManager(self.broker, risk)
@@ -118,7 +122,7 @@ class LiveTradingRunner:
             "allocation_strategy": self.allocation_strategy,
             "priority_ranking": self.priority_ranking,
             "allocation_weights": self.allocation_weights,
-            "total_capital": self.capital
+            "total_capital": active_capital
         })
 
         # 3. Instantiate and register ORB strategy for each symbol
@@ -133,7 +137,7 @@ class LiveTradingRunner:
             strat.name = f"ORB Strategy ({sym})"
             strat.symbol = sym
             strat.symbols = [sym]
-            strat.capital_limit = self.capital
+            strat.capital_limit = active_capital
             strat.leverage = self.leverage
             
             self.manager.register_strategy(strat)
@@ -406,21 +410,25 @@ class LiveTradingRunner:
             self.allocation_weights = [float(w) for w in config["allocation_weights"]]
         if "capital" in config:
             self.capital = float(config["capital"])
+        if "allocated_percentage" in config:
+            self.allocated_percentage = float(config["allocated_percentage"])
         if "leverage" in config:
             self.leverage = float(config["leverage"])
         if "enable_live_stocks" in config:
             self.enable_live_stocks = bool(config["enable_live_stocks"])
             
+        active_capital = self.capital * (self.allocated_percentage / 100.0)
+
         if self.manager:
             self.manager.update_allocation_config({
                 "allocation_strategy": self.allocation_strategy,
                 "priority_ranking": self.priority_ranking,
                 "allocation_weights": self.allocation_weights,
-                "total_capital": self.capital
+                "total_capital": active_capital
             })
             
             for strat in self.strategies.values():
-                strat.capital_limit = self.capital
+                strat.capital_limit = active_capital
                 strat.leverage = self.leverage
                 
         # Persist updated parameters back to configs/orb.yaml on disk
@@ -444,6 +452,7 @@ class LiveTradingRunner:
             current_config["allocation_strategy"] = self.allocation_strategy
             current_config["allocation_weights"] = self.allocation_weights
             current_config["capital"] = self.capital
+            current_config["allocated_percentage"] = self.allocated_percentage
             current_config["leverage"] = self.leverage
             
             with open(config_path, "w") as f:
@@ -641,6 +650,7 @@ class LiveTradingRunner:
                 "allocation_strategy": self.allocation_strategy,
                 "allocation_weights": self.allocation_weights,
                 "capital": self.capital,
+                "allocated_percentage": self.allocated_percentage,
                 "leverage": self.leverage,
                 "enable_live_stocks": self.enable_live_stocks
             }

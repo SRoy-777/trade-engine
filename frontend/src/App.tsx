@@ -70,6 +70,7 @@ const App: React.FC = () => {
   const [priorityRanking, setPriorityRanking] = useState<string[]>(["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"]);
   const [newSymbolInput, setNewSymbolInput] = useState("");
   const [capital, setCapital] = useState<number>(100000);
+  const [allocatedPercentage, setAllocatedPercentage] = useState<number>(100.0);
   const [leverage, setLeverage] = useState<number>(5);
   const [allocationStrategy, setAllocationStrategy] = useState<"SINGLE_STOCK" | "PERCENTAGE_RANKED">("SINGLE_STOCK");
   const [weights, setWeights] = useState<number[]>([0.5, 0.3, 0.2]);
@@ -90,6 +91,9 @@ const App: React.FC = () => {
       setLocalSymbols(strategyConfig.symbols);
       setPriorityRanking(strategyConfig.priority_ranking);
       setCapital(strategyConfig.capital);
+      if (strategyConfig.allocated_percentage !== undefined) {
+        setAllocatedPercentage(strategyConfig.allocated_percentage);
+      }
       setLeverage(strategyConfig.leverage);
       setAllocationStrategy(strategyConfig.allocation_strategy as "SINGLE_STOCK" | "PERCENTAGE_RANKED");
       setWeights(strategyConfig.allocation_weights);
@@ -605,6 +609,7 @@ const App: React.FC = () => {
     e.preventDefault();
     updateStrategyConfig({
       capital: capital,
+      allocated_percentage: allocatedPercentage,
       leverage: leverage,
       allocation_strategy: allocationStrategy,
       allocation_weights: weights,
@@ -1648,15 +1653,58 @@ const App: React.FC = () => {
 
             <form onSubmit={handleSaveSettings} className="bg-slate-900/60 border border-slate-850 rounded-xl p-6 shadow-lg space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">Default Starting Capital Pool (INR)</label>
-                  <input 
-                    type="number" 
-                    value={capital}
-                    onChange={e => setCapital(parseInt(e.target.value) || 0)}
-                    className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-cyan-500 transition duration-150"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">Determines the allocation pool split calculations.</span>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">Available Funds (INR)</label>
+                    <input 
+                      type="number" 
+                      value={capital}
+                      onChange={e => setCapital(parseInt(e.target.value) || 0)}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-cyan-500 transition duration-150"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">Total funds available for strategy allocation.</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">Percentage Allocated (%)</label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="100" 
+                        step="0.5"
+                        value={allocatedPercentage}
+                        onChange={e => setAllocatedPercentage(parseFloat(e.target.value) || 100.0)}
+                        className="flex-grow accent-cyan-500 bg-slate-950 h-1.5 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max="100" 
+                        step="0.5"
+                        value={allocatedPercentage}
+                        onChange={e => setAllocatedPercentage(Math.min(100, Math.max(1, parseFloat(e.target.value) || 100.0)))}
+                        className="w-20 bg-slate-950 border border-slate-850 rounded-lg px-3 py-1.5 text-xs text-slate-200 text-center outline-none focus:border-cyan-500 transition duration-150 font-mono"
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-500 mt-1 block">Percentage of available funds directed to execution.</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">Amount Allocated (INR)</label>
+                    <input 
+                      type="number" 
+                      value={Math.round(capital * (allocatedPercentage / 100))}
+                      onChange={e => {
+                        const amt = parseFloat(e.target.value) || 0;
+                        if (capital > 0) {
+                          setAllocatedPercentage(Math.min(100, Math.max(1, Math.round((amt / capital) * 10000) / 100)));
+                        }
+                      }}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-cyan-500 transition duration-150 font-mono"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">Auto-calculated trade value block based on percentage allocated.</span>
+                  </div>
                 </div>
 
                 <div>

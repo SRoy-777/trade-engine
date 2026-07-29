@@ -391,7 +391,8 @@ class ORBStrategy(BaseStrategy):
             max_allowed_val = self.manager.risk_controller.max_capital_per_trade_inr
             buying_power = min(buying_power, max_allowed_val * 0.99)
         
-        qty = int(buying_power / close_price)
+        import math
+        qty = int(math.floor(buying_power / close_price))
         if qty <= 0:
             dhan_logger.warning(f"[ORB] Entry Blocked: Calculated quantity is 0 for {self.symbol} (Price: {close_price}, Buying Power: {buying_power})")
             return
