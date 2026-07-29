@@ -85,9 +85,11 @@ const App: React.FC = () => {
   const [defaultStrategy, setDefaultStrategy] = useState<string>("ORB");
   const [audioAlerts, setAudioAlerts] = useState<boolean>(true);
 
+  const isConfigInitialized = useRef(false);
+
   // Sync state parameters from backend when received
   useEffect(() => {
-    if (strategyConfig) {
+    if (strategyConfig && !isConfigInitialized.current) {
       setLocalSymbols(strategyConfig.symbols);
       setPriorityRanking(strategyConfig.priority_ranking);
       setCapital(strategyConfig.capital);
@@ -98,6 +100,7 @@ const App: React.FC = () => {
       setAllocationStrategy(strategyConfig.allocation_strategy as "SINGLE_STOCK" | "PERCENTAGE_RANKED");
       setWeights(strategyConfig.allocation_weights);
       setEnableLiveStocks(strategyConfig.enable_live_stocks || false);
+      isConfigInitialized.current = true;
     }
   }, [strategyConfig]);
 
@@ -598,6 +601,7 @@ const App: React.FC = () => {
   // Capital Allocation Settings Saver
   const saveAllocationWeights = (newWeights: number[]) => {
     setWeights(newWeights);
+    isConfigInitialized.current = false;
     updateStrategyConfig({
       allocation_weights: newWeights
     });
@@ -607,6 +611,7 @@ const App: React.FC = () => {
   // Save Settings panel configuration parameters
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
+    isConfigInitialized.current = false;
     updateStrategyConfig({
       capital: capital,
       allocated_percentage: allocatedPercentage,
