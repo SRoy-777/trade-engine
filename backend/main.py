@@ -331,7 +331,8 @@ async def manual_exit_position(symbol: str):
 @app.get("/api/diagnostic/persistence")
 async def persistence_diagnostic():
     """Diagnose the persistence layer — shows DB path, R2 status, record counts."""
-    result = {
+    from typing import Any
+    result: dict[str, Any] = {
         "persistence_active": False,
         "r2_enabled": False,
         "db_path": None,
