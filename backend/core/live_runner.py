@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Callable, Optional, List
 from core.broker.paper import PaperBroker
+from core.broker.dhan_live import DhanLiveBroker
 from core.risk.controller import RiskController
 from core.strategy.manager import StrategyManager
 from core.strategy.orb import ORBStrategy
@@ -32,6 +33,7 @@ class LiveTradingRunner:
         self.allocation_weights: List[float] = [0.5, 0.3, 0.2]
         self.capital = 100000.0
         self.allocated_percentage = 100.0
+        self.broker_mode = "PAPER"
         self.leverage = 5.0
         
         self.indices: Dict[str, Dict[str, Any]] = {
@@ -40,6 +42,7 @@ class LiveTradingRunner:
         }
         
         self.active = False
+        self._prev_connection_ok = True
         self._ui_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         
         # Watchdog connection checks
@@ -102,14 +105,18 @@ class LiveTradingRunner:
         self.allocation_weights = [float(w) for w in config.get("allocation_weights", [0.50, 0.30, 0.20])]
         self.capital = float(config.get("capital", 100000.0))
         self.allocated_percentage = float(config.get("allocated_percentage", 100.0))
+        self.broker_mode = str(config.get("broker_mode", "PAPER")).upper()
         self.leverage = float(config.get("leverage", 5.0))
 
         active_capital = self.capital * (self.allocated_percentage / 100.0)
 
-        logger.info(f"[Live Runner] Starting multi-symbol ORB strategy. Symbols: {self.symbols}, Available Funds: Rs.{self.capital}, Percentage Allocated: {self.allocated_percentage}%, Active Capital Limit: Rs.{active_capital}")
+        logger.info(f"[Live Runner] Starting multi-symbol ORB strategy. Mode: {self.broker_mode} | Symbols: {self.symbols}, Available Funds: Rs.{self.capital}, Percentage Allocated: {self.allocated_percentage}%, Active Capital Limit: Rs.{active_capital}")
 
-        # 2. Initialize paper broker and risk components
-        self.broker = PaperBroker(initial_cash_inr=self.capital, latency_ms=50.0)
+        # 2. Initialize live or paper broker and risk components
+        if self.broker_mode == "REAL":
+            self.broker = DhanLiveBroker(symbol_mappings=mappings)
+        else:
+            self.broker = PaperBroker(initial_cash_inr=self.capital, latency_ms=50.0)
         risk = RiskController(
             max_capital_per_trade_inr=active_capital * self.leverage,
             max_daily_loss_inr=active_capital * 0.1,  # 10% daily loss limit
@@ -412,6 +419,8 @@ class LiveTradingRunner:
             self.capital = float(config["capital"])
         if "allocated_percentage" in config:
             self.allocated_percentage = float(config["allocated_percentage"])
+        if "broker_mode" in config:
+            self.broker_mode = str(config["broker_mode"]).upper()
         if "leverage" in config:
             self.leverage = float(config["leverage"])
         if "enable_live_stocks" in config:
@@ -453,6 +462,7 @@ class LiveTradingRunner:
             current_config["allocation_weights"] = self.allocation_weights
             current_config["capital"] = self.capital
             current_config["allocated_percentage"] = self.allocated_percentage
+            current_config["broker_mode"] = self.broker_mode
             current_config["leverage"] = self.leverage
             
             with open(config_path, "w") as f:
@@ -483,6 +493,19 @@ class LiveTradingRunner:
                 else:
                     self.connection_ok = False
                 
+                # Check for connection status state transitions
+                if self.connection_ok != self._prev_connection_ok:
+                    if not self.connection_ok:
+                        dhan_logger.warning("[Watchdog Alert] Overall Dhan connection COMPROMISED. Suspending all strategy executions.")
+                        for strat in self.strategies.values():
+                            strat.is_active = False
+                    else:
+                        dhan_logger.info("[Watchdog Restore] Connection RESTORED. Clearing stale breakout entry signals before re-activating.")
+                        for strat in self.strategies.values():
+                            strat.pending_entry = None  # Discard stale entry signals
+                            strat.is_active = True
+                    self._prev_connection_ok = self.connection_ok
+
                 for sym in self.symbols:
                     last_time = self.last_tick_times.get(sym)
                     # If tick has not arrived or has expired for > 30 seconds
@@ -497,13 +520,13 @@ class LiveTradingRunner:
                             if strat:
                                 strat.is_active = False
                     else:
-                        # Clear warning state and resume strategy execution
+                        # Clear warning state and resume strategy execution if connection is active
                         if sym in self.warning_symbols:
                             self.warning_symbols.remove(sym)
                             dhan_logger.info(f"[Watchdog Restore] Resumed data feed for {sym}. Re-activating entries.")
                             strat = self.strategies.get(sym)
                             if strat:
-                                strat.is_active = True
+                                strat.is_active = self.connection_ok
                 
                 self.broadcast_update()
             except asyncio.CancelledError:
@@ -651,6 +674,7 @@ class LiveTradingRunner:
                 "allocation_weights": self.allocation_weights,
                 "capital": self.capital,
                 "allocated_percentage": self.allocated_percentage,
+                "broker_mode": self.broker_mode,
                 "leverage": self.leverage,
                 "enable_live_stocks": self.enable_live_stocks
             }

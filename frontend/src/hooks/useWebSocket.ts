@@ -94,6 +94,7 @@ export interface StrategyConfig {
   allocation_weights: number[];
   capital: number;
   allocated_percentage?: number;
+  broker_mode?: string;
   leverage: number;
   enable_live_stocks?: boolean;
 }
@@ -278,6 +279,7 @@ export function useWebSocket(overrideUrl?: string) {
     allocation_weights?: number[];
     capital?: number;
     allocated_percentage?: number;
+    broker_mode?: string;
     leverage?: number;
   }) => {
     sendAction("update_strategy_config", config);

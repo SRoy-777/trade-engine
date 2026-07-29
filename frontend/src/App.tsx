@@ -71,6 +71,7 @@ const App: React.FC = () => {
   const [newSymbolInput, setNewSymbolInput] = useState("");
   const [capital, setCapital] = useState<number>(100000);
   const [allocatedPercentage, setAllocatedPercentage] = useState<number>(100.0);
+  const [brokerMode, setBrokerMode] = useState<string>("PAPER");
   const [leverage, setLeverage] = useState<number>(5);
   const [allocationStrategy, setAllocationStrategy] = useState<"SINGLE_STOCK" | "PERCENTAGE_RANKED">("SINGLE_STOCK");
   const [weights, setWeights] = useState<number[]>([0.5, 0.3, 0.2]);
@@ -95,6 +96,9 @@ const App: React.FC = () => {
       setCapital(strategyConfig.capital);
       if (strategyConfig.allocated_percentage !== undefined) {
         setAllocatedPercentage(strategyConfig.allocated_percentage);
+      }
+      if (strategyConfig.broker_mode !== undefined) {
+        setBrokerMode(strategyConfig.broker_mode);
       }
       setLeverage(strategyConfig.leverage);
       setAllocationStrategy(strategyConfig.allocation_strategy as "SINGLE_STOCK" | "PERCENTAGE_RANKED");
@@ -615,6 +619,7 @@ const App: React.FC = () => {
     updateStrategyConfig({
       capital: capital,
       allocated_percentage: allocatedPercentage,
+      broker_mode: brokerMode,
       leverage: leverage,
       allocation_strategy: allocationStrategy,
       allocation_weights: weights,
@@ -652,7 +657,15 @@ const App: React.FC = () => {
                 {connectionStatus.toUpperCase()}
               </span>
             </div>
-            <div className="text-[10px] font-mono text-slate-500 flex justify-between mt-0.5">
+            <div className="text-[11px] font-mono text-slate-350 flex justify-between mt-1">
+              <span>Execution Mode:</span>
+              <span className={`font-black uppercase tracking-wider px-1 py-0.5 rounded text-[10px] ${
+                brokerMode === "REAL" ? "bg-red-950/50 text-red-500 animate-pulse border border-red-900/30" : "bg-cyan-950/40 text-cyan-400"
+              }`}>
+                {brokerMode}
+              </span>
+            </div>
+            <div className="text-[10px] font-mono text-slate-500 flex justify-between mt-1">
               <span>Latency:</span>
               <span className="text-slate-400">~{metrics?.avg_pipeline_time_ms ? (metrics.avg_pipeline_time_ms * 1000).toFixed(0) : "12"} ms</span>
             </div>
@@ -702,17 +715,21 @@ const App: React.FC = () => {
           {isRunning ? (
             <button
               onClick={stopLiveStrategy}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-rose-600 hover:bg-rose-500 active:scale-95 transition text-white font-extrabold text-xs rounded-lg shadow-md cursor-pointer"
+              className={`w-full flex items-center justify-center gap-2 py-2.5 active:scale-95 transition text-white font-extrabold text-xs rounded-lg shadow-md cursor-pointer ${
+                brokerMode === "REAL" ? "bg-red-700 hover:bg-red-650" : "bg-rose-600 hover:bg-rose-500"
+              }`}
             >
-              <Square className="w-3.5 h-3.5" /> Stop Paper Trade
+              <Square className="w-3.5 h-3.5" /> {brokerMode === "REAL" ? "Stop LIVE Trade" : "Stop Paper Trade"}
             </button>
           ) : (
             <button
               onClick={handleStartLive}
               disabled={localSymbols.length === 0}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition text-white font-extrabold text-xs rounded-lg shadow-md cursor-pointer"
+              className={`w-full flex items-center justify-center gap-2 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition text-white font-extrabold text-xs rounded-lg shadow-md cursor-pointer ${
+                brokerMode === "REAL" ? "bg-amber-600 hover:bg-amber-550 border border-amber-500/20" : "bg-cyan-600 hover:bg-cyan-500"
+              }`}
             >
-              <Play className="w-3.5 h-3.5" /> Start Paper Trade
+              <Play className="w-3.5 h-3.5" /> {brokerMode === "REAL" ? "Start LIVE Trade" : "Start Paper Trade"}
             </button>
           )}
         </div>
@@ -732,19 +749,35 @@ const App: React.FC = () => {
         )}
 
         {!connectionOk && isRunning && (
-          <div className="mb-5 flex flex-col md:flex-row items-center justify-between gap-3 px-5 py-4 rounded-xl bg-amber-950/30 border border-amber-900/50 text-amber-200 text-xs shadow-md relative overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500 animate-pulse"></div>
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400 animate-bounce" />
-              <div>
-                <span className="font-bold text-white block uppercase tracking-wider text-[10px] mb-0.5">Dhan Feed Disconnected</span>
-                <span className="text-slate-400">Live stock feeds are currently suspended. Retrying stream handshake hooks.</span>
+          brokerMode === "REAL" ? (
+            <div className="mb-5 flex flex-col md:flex-row items-center justify-between gap-3 px-5 py-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-200 text-xs shadow-md relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500 animate-pulse"></div>
+              <div className="flex items-center gap-3">
+                <ShieldAlert className="w-5 h-5 text-red-400 animate-bounce" />
+                <div>
+                  <span className="font-bold text-white block uppercase tracking-wider text-[10px] mb-0.5">CRITICAL ALERT: Dhan Connection Compromised!</span>
+                  <span className="text-slate-350">Order routing is strictly suspended. The system is retrying connection... Stale breakout signals received during downtime will be discarded upon recovery.</span>
+                </div>
+              </div>
+              <div className="px-3 py-1 rounded bg-red-500/10 border border-red-500/20 font-bold uppercase text-[9px] tracking-widest text-red-400 animate-pulse">
+                Connection Compromised
               </div>
             </div>
-            <div className="px-3 py-1 rounded bg-amber-500/10 border border-amber-500/20 font-bold uppercase text-[9px] tracking-widest text-amber-400 animate-pulse">
-              Watchdog Suspension Mode
+          ) : (
+            <div className="mb-5 flex flex-col md:flex-row items-center justify-between gap-3 px-5 py-4 rounded-xl bg-amber-950/30 border border-amber-900/50 text-amber-200 text-xs shadow-md relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500 animate-pulse"></div>
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-400 animate-bounce" />
+                <div>
+                  <span className="font-bold text-white block uppercase tracking-wider text-[10px] mb-0.5">Dhan Feed Disconnected</span>
+                  <span className="text-slate-400">Live stock feeds are currently suspended. Retrying stream handshake hooks.</span>
+                </div>
+              </div>
+              <div className="px-3 py-1 rounded bg-amber-500/10 border border-amber-500/20 font-bold uppercase text-[9px] tracking-widest text-amber-400 animate-pulse">
+                Watchdog Suspension Mode
+              </div>
             </div>
-          </div>
+          )
         )}
 
         {/* -------------------- PAGE RENDER ROUTING -------------------- */}
@@ -1715,15 +1748,30 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">Intraday Leverage Multiplier</label>
-                  <input 
-                    type="number" 
-                    value={leverage}
-                    onChange={e => setLeverage(parseInt(e.target.value) || 1)}
-                    className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-cyan-500 transition duration-150"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">Intraday margin multiplier (defaults to 5x NSE rules).</span>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">Broker Execution Mode</label>
+                    <select 
+                      value={brokerMode}
+                      onChange={e => setBrokerMode(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-350 outline-none focus:border-cyan-500 cursor-pointer"
+                    >
+                      <option value="PAPER">Simulated Paper Broker</option>
+                      <option value="REAL">Dhan Live Real Account</option>
+                    </select>
+                    <span className="text-[10px] text-slate-500 mt-1 block">Toggles execution between real money and local sandbox.</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">Intraday Leverage Multiplier</label>
+                    <input 
+                      type="number" 
+                      value={leverage}
+                      onChange={e => setLeverage(parseInt(e.target.value) || 1)}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-cyan-500 transition duration-150"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">Intraday margin multiplier (defaults to 5x NSE rules).</span>
+                  </div>
                 </div>
 
                 <div>
