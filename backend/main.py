@@ -317,9 +317,16 @@ async def test_dhan_order():
 
     def _place():
         data = json.dumps(payload).encode("utf-8")
+        proxy_url = os.getenv("DHAN_PROXY_URL", "").strip()
+        if proxy_url:
+            proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+            opener = urllib.request.build_opener(proxy_handler)
+        else:
+            opener = urllib.request.build_opener()
+            
         req = urllib.request.Request("https://api.dhan.co/v2/orders", data=data, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with opener.open(req, timeout=8) as resp:
                 return {"status": resp.status, "body": json.loads(resp.read().decode("utf-8"))}
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8")
