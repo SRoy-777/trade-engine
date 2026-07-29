@@ -264,13 +264,25 @@ def read_health():
 
 @app.get("/server-ip")
 async def server_ip():
-    """Returns the current server external IP — add this to Dhan API IP whitelist."""
+    """Returns the current server external IP (routed through proxy if active). Add this to Dhan API IP whitelist."""
+    import os, urllib.request
+    proxy_url = os.getenv("DHAN_PROXY_URL", "").strip()
     try:
-        import urllib.request as _ur
-        ip = _ur.urlopen("https://api.ipify.org", timeout=5).read().decode().strip()
-        return {"server_ip": ip, "action": "Add this IP to Dhan Developer Portal → API Settings → IP Whitelist"}
+        if proxy_url:
+            proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+            opener = urllib.request.build_opener(proxy_handler)
+        else:
+            opener = urllib.request.build_opener()
+            
+        with opener.open("https://api.ipify.org", timeout=5) as resp:
+            ip = resp.read().decode().strip()
+            
+        if proxy_url:
+            return {"exit_ip": ip, "type": "Proxy Exit IP", "action": "Add this IP (exit_ip) to Dhan Developer Portal -> Static IP Setting"}
+        else:
+            return {"server_ip": ip, "type": "Direct IP (No Proxy)"}
     except Exception as e:
-        return {"server_ip": "unknown", "error": str(e)}
+        return {"error": str(e)}
 
 @app.get("/test-dhan-order")
 async def test_dhan_order():
