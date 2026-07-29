@@ -159,21 +159,28 @@ class LiveTradingRunner:
         self.priority_ranking = [s.strip().upper() for s in raw_priority if s.strip().upper() in self.symbols]
         self.allocation_strategy = config.get("allocation_strategy", "SINGLE_STOCK").upper()
         self.allocation_weights = [float(w) for w in config.get("allocation_weights", [0.50, 0.30, 0.20])]
-        self.capital = float(config.get("capital", 100000.0))
+        self.capital = float(config.get("capital", 5000.0))  # used for PAPER mode only
         self.allocated_percentage = float(config.get("allocated_percentage", 100.0))
         self.broker_mode = str(config.get("broker_mode", "PAPER")).upper()
         self.leverage = float(config.get("leverage", 5.0))
 
-        # In REAL mode: auto-fetch live Dhan account balance to use as capital limit.
-        # This ensures risk limits always reflect actual available funds regardless of
-        # what's set in orb.yaml. Falls back to config value if the API call fails.
+        # REAL mode: capital MUST come from live Dhan balance API.
+        # If the API call fails or returns zero → abort start entirely.
+        # The yaml 'capital' field is for PAPER mode only and is never used as a REAL fallback.
         if self.broker_mode == "REAL":
             live_balance = self.check_dhan_balance()
-            if live_balance > 0:
-                logger.info(f"[Live Runner] REAL mode: Using live Dhan balance as capital limit: Rs.{live_balance:,.2f}")
-                self.capital = live_balance
-            else:
-                logger.warning(f"[Live Runner] REAL mode: Could not fetch Dhan balance, using config capital: Rs.{self.capital:,.2f}")
+            if live_balance <= 0:
+                logger.error(
+                    "[Live Runner] REAL mode startup ABORTED: Could not fetch live Dhan balance "
+                    "(API returned 0 or failed). No trade will be placed. "
+                    "Resolve Dhan API connectivity and restart the engine."
+                )
+                raise RuntimeError(
+                    "REAL mode requires a valid Dhan balance from the API. "
+                    "Balance fetch returned 0 or failed — startup aborted to prevent uncontrolled trading."
+                )
+            logger.info(f"[Live Runner] REAL mode: Dhan balance confirmed — capital limit set to Rs.{live_balance:,.2f}")
+            self.capital = live_balance
 
         active_capital = self.capital * (self.allocated_percentage / 100.0)
 
