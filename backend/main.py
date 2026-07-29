@@ -272,6 +272,68 @@ async def server_ip():
     except Exception as e:
         return {"server_ip": "unknown", "error": str(e)}
 
+@app.get("/test-dhan-order")
+async def test_dhan_order():
+    """
+    Tests if Dhan's POST /orders write layer accepts requests from this server's IP.
+    Places a LIMIT BUY for 1 share of SBIN at Rs.1 (impossible price — will NEVER execute).
+    Check Dhan app and cancel manually if an order ID is returned.
+    """
+    import os, json, uuid, urllib.request, urllib.error, asyncio
+    client_id = os.getenv("CLIENT_ID", "").strip()
+    access_token = os.getenv("ACCESS_TOKEN", "").strip()
+    if not client_id or not access_token:
+        return {"result": "ERROR", "reason": "CLIENT_ID or ACCESS_TOKEN not set"}
+
+    payload = {
+        "dhanClientId": client_id,
+        "correlationId": f"iptest_{uuid.uuid4().hex[:8]}",
+        "transactionType": "BUY",
+        "exchangeSegment": "NSE_EQ",
+        "productType": "INTRADAY",
+        "orderType": "LIMIT",
+        "validity": "DAY",
+        "securityId": "3045",  # SBIN
+        "quantity": 1,
+        "price": 1.0           # Rs.1 — impossible price, never fills
+    }
+    headers = {
+        "access-token": access_token,
+        "client-id": client_id,
+        "Content-Type": "application/json"
+    }
+
+    def _place():
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request("https://api.dhan.co/v2/orders", data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                return {"status": resp.status, "body": json.loads(resp.read().decode("utf-8"))}
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8")
+            return {"status": e.code, "body": body}
+        except Exception as ex:
+            return {"status": "exception", "body": str(ex)}
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _place)
+
+    body = result.get("body", {})
+    if isinstance(body, dict) and "orderId" in body:
+        return {
+            "result": "✅ WRITE LAYER WORKS — IP whitelisting NOT required",
+            "order_id": body["orderId"],
+            "WARNING": "⚠️ Cancel this order in Dhan app immediately!",
+            "raw": body
+        }
+    elif "905" in str(body) or "IP" in str(body).upper() or "whitelist" in str(body).lower():
+        return {
+            "result": "❌ IP WHITELISTING REQUIRED — Dhan blocked this order",
+            "raw": body
+        }
+    else:
+        return {"result": "UNKNOWN", "http_status": result.get("status"), "raw": body}
+
 @app.post("/api/trading/exit/{symbol}")
 async def manual_exit_position(symbol: str):
     """Manually close an active position at current LTP. Uses the same code path as SL/TP exits."""
