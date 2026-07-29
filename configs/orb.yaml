@@ -1,7 +1,7 @@
 enable_live_stocks: true
 symbols: "market_data/orb/choosed_stocks.xlsx" # Excel file containing the stocks to load
 timeframe: 5m
-capital: 5000  # Fallback only — in REAL mode, actual Dhan balance is auto-fetched and overrides this
+capital: 60000  # PAPER mode only — REAL mode always fetches live balance from Dhan API (this value is never used in REAL mode)
 leverage: 5
 opening_range_mins: 15
 volume_filter_multiplier: 2.0
