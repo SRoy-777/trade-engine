@@ -21,6 +21,17 @@ class DhanLiveBroker(BaseBroker):
         self.access_token = os.getenv("ACCESS_TOKEN", "").strip()
         self.api_url = "https://api.dhan.co"
 
+        # Optional static-IP proxy for Dhan API calls.
+        # Set DHAN_PROXY_URL in HF Space secrets to route all Dhan REST calls through
+        # a fixed IP (e.g. Webshare.io proxy) so the IP can be whitelisted in Dhan portal.
+        # Format: http://username:password@proxy_host:port
+        # If not set, direct connection is used (requires HF Space IP to be whitelisted).
+        self._proxy_url = os.getenv("DHAN_PROXY_URL", "").strip() or None
+        if self._proxy_url:
+            dhan_logger.info("[Dhan Live Broker] Static-IP proxy configured — all Dhan API calls will route through proxy")
+        else:
+            dhan_logger.warning("[Dhan Live Broker] No DHAN_PROXY_URL set — using direct connection (HF IP must be whitelisted in Dhan)")
+
         # Local state mirroring for StrategyManager compatibility
         self._cash = 0.0
         self._positions: Dict[str, Dict[str, float]] = {}
@@ -30,21 +41,29 @@ class DhanLiveBroker(BaseBroker):
         dhan_logger.info(f"[Dhan Live Broker] Initialised. Client ID: {self.client_id} | Mappings: {len(symbol_mappings)}")
 
     def _send_request(self, method: str, endpoint: str, payload: Optional[Dict[str, Any]] = None) -> Any:
-        """Helper to send synchronous HTTP requests to Dhan REST API."""
+        """Helper to send synchronous HTTP requests to Dhan REST API.
+        Routes through DHAN_PROXY_URL if set (recommended for HF Spaces — static IP whitelisting)."""
         url = f"{self.api_url}{endpoint}"
         headers = {
             "access-token": self.access_token,
             "client-id": self.client_id,
             "Content-Type": "application/json"
         }
-        
+
         data = None
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")
 
+        # Build opener: use proxy if configured, else direct
+        if self._proxy_url:
+            proxy_handler = urllib.request.ProxyHandler({"http": self._proxy_url, "https": self._proxy_url})
+            opener = urllib.request.build_opener(proxy_handler)
+        else:
+            opener = urllib.request.build_opener()
+
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=8) as response:
+            with opener.open(req, timeout=10) as response:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as e:
             dhan_logger.error(f"[Dhan Live Broker] API Request FAILED to {endpoint}: {e}")
