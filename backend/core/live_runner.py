@@ -6,6 +6,7 @@ import urllib.request
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Callable, Optional, List
+from core.broker.base import BaseBroker
 from core.broker.paper import PaperBroker
 from core.broker.dhan_live import DhanLiveBroker
 from core.risk.controller import RiskController
@@ -23,7 +24,7 @@ class LiveTradingRunner:
     def __init__(self):
         self.provider: Optional[DhanMarketProvider] = None
         self.manager: Optional[StrategyManager] = None
-        self.broker: Optional[PaperBroker] = None
+        self.broker: Optional[BaseBroker] = None
         self.strategies: Dict[str, ORBStrategy] = {}
         
         # Configuration settings
@@ -173,6 +174,8 @@ class LiveTradingRunner:
             max_daily_loss_inr=active_capital * 0.1,  # 10% daily loss limit
             margin_leverage_multiplier=self.leverage
         )
+        if self.broker is None:
+            raise ValueError("[Live Runner] Broker was not successfully initialized")
         self.manager = StrategyManager(self.broker, risk)
         
         # Configure allocation parameters in the Strategy Manager
@@ -217,11 +220,11 @@ class LiveTradingRunner:
                 # DuckDB was already restored from R2 in main.py lifespan before connecting.
                 # No reconnect needed — just use the existing connection.
 
-                # Restore cash balance
+                # Restore cash balance (Only for PAPER broker, since REAL broker queries Dhan REST limits)
                 saved_cash = self._persistence.load_cash()
-                if saved_cash is not None:
-                    self.broker._cash = saved_cash
-                    logger.info(f"[Live Runner] Cash restored: Rs.{saved_cash:,.2f}")
+                if saved_cash is not None and self.broker_mode == "PAPER" and self.broker is not None:
+                    setattr(self.broker, "_cash", saved_cash)
+                    logger.info(f"[Live Runner] Paper cash restored: Rs.{saved_cash:,.2f}")
 
                 # Helper function to find strategy by symbol name
                 def find_strategy_by_symbol(symbol_name: str):
@@ -273,13 +276,14 @@ class LiveTradingRunner:
                 self._persistence = None
 
         # 4. Connect broker fills to notify the UI instantly
-        original_callback = self.broker._fill_callback
-        async def on_broker_fill(fill_event: Dict[str, Any]):
-            if original_callback:
-                await original_callback(fill_event)
-            self.broadcast_update()
+        if self.broker is not None:
+            original_callback = getattr(self.broker, "_fill_callback", None)
+            async def on_broker_fill(fill_event: Dict[str, Any]):
+                if original_callback:
+                    await original_callback(fill_event)
+                self.broadcast_update()
 
-        self.broker.register_fill_callback(on_broker_fill)
+            self.broker.register_fill_callback(on_broker_fill)
 
         # 5. Initialize Dhan Market Feed
         self.provider = DhanMarketProvider()
