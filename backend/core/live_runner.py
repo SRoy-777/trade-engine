@@ -692,7 +692,7 @@ class LiveTradingRunner:
                     "active_trade_detail": active_detail,
                     "is_active": strat.is_active,
                     "warning": sym in self.warning_symbols,
-                    "last_ltp": self.broker._last_prices.get(sym, 0.0) if self.broker else 0.0,
+                    "last_ltp": getattr(self.broker, "_last_prices", {}).get(sym, 0.0) if self.broker else 0.0,
                     "offline": not self.enable_live_stocks,
                     "open": ohlc.get("open", 0.0),
                     "high": ohlc.get("high", 0.0),
