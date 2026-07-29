@@ -164,6 +164,17 @@ class LiveTradingRunner:
         self.broker_mode = str(config.get("broker_mode", "PAPER")).upper()
         self.leverage = float(config.get("leverage", 5.0))
 
+        # In REAL mode: auto-fetch live Dhan account balance to use as capital limit.
+        # This ensures risk limits always reflect actual available funds regardless of
+        # what's set in orb.yaml. Falls back to config value if the API call fails.
+        if self.broker_mode == "REAL":
+            live_balance = self.check_dhan_balance()
+            if live_balance > 0:
+                logger.info(f"[Live Runner] REAL mode: Using live Dhan balance as capital limit: Rs.{live_balance:,.2f}")
+                self.capital = live_balance
+            else:
+                logger.warning(f"[Live Runner] REAL mode: Could not fetch Dhan balance, using config capital: Rs.{self.capital:,.2f}")
+
         active_capital = self.capital * (self.allocated_percentage / 100.0)
 
         logger.info(f"[Live Runner] Starting multi-symbol ORB strategy. Mode: {self.broker_mode} | Symbols: {self.symbols}, Available Funds: Rs.{self.capital}, Percentage Allocated: {self.allocated_percentage}%, Active Capital Limit: Rs.{active_capital}")
