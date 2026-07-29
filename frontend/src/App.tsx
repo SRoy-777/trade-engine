@@ -634,6 +634,10 @@ const App: React.FC = () => {
   };
 
   const handleToggleMode = (nextMode: "PAPER" | "REAL") => {
+    if (isRunning) {
+      addToast("Cannot change broker mode while the trading engine is active. Please STOP the trade engine first.", "warning");
+      return;
+    }
     setBrokerMode(nextMode);
     isConfigInitialized.current = false;
     const targetCapital = nextMode === "REAL" ? realCapital : paperCapital;
@@ -786,10 +790,18 @@ const App: React.FC = () => {
             <p className="text-[10px] text-slate-500 font-mono mt-0.5">Trade Execution Terminal control desk</p>
           </div>
           
-          <div className="flex items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl shadow-lg relative">
+          <div 
+            className={`flex items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl shadow-lg relative ${
+              isRunning ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            title={isRunning ? "Stop the trading engine to switch execution modes" : ""}
+          >
             <button
               onClick={() => handleToggleMode("PAPER")}
-              className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all duration-200 cursor-pointer ${
+              disabled={isRunning}
+              className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all duration-200 ${
+                isRunning ? "cursor-not-allowed" : "cursor-pointer"
+              } ${
                 brokerMode === "PAPER" 
                   ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-md shadow-cyan-950/20" 
                   : "text-slate-500 hover:text-slate-350"
@@ -799,7 +811,10 @@ const App: React.FC = () => {
             </button>
             <button
               onClick={() => handleToggleMode("REAL")}
-              className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+              disabled={isRunning}
+              className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all duration-200 flex items-center gap-1.5 ${
+                isRunning ? "cursor-not-allowed" : "cursor-pointer"
+              } ${
                 brokerMode === "REAL" 
                   ? "bg-red-500/10 text-red-400 border border-red-500/20 shadow-md shadow-red-950/20 animate-pulse" 
                   : "text-slate-500 hover:text-slate-350"
