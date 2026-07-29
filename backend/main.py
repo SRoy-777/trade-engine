@@ -31,6 +31,14 @@ from core.live_runner import live_runner
 async def lifespan(app: FastAPI):
     # Startup Initialization
     logger.info("Initializing Trade Engine backend services...")
+
+    # Log the server's external IP at startup — required for Dhan API IP whitelisting
+    try:
+        import urllib.request as _ur
+        _ip = _ur.urlopen("https://api.ipify.org", timeout=5).read().decode().strip()
+        logger.info(f"[Startup] Server external IP: {_ip} — ensure this is whitelisted in Dhan API settings")
+    except Exception:
+        logger.warning("[Startup] Could not determine server external IP (ipify.org unreachable)")
     
     # 0. Pre-download DuckDB state from R2 if persistence is enabled
     #    This MUST happen before db_manager.connect() so DuckDB opens the restored file
@@ -253,6 +261,16 @@ def read_health():
         "config_err": config_err,
         "resolved_paths": resolved_paths
     }
+
+@app.get("/server-ip")
+async def server_ip():
+    """Returns the current server external IP — add this to Dhan API IP whitelist."""
+    try:
+        import urllib.request as _ur
+        ip = _ur.urlopen("https://api.ipify.org", timeout=5).read().decode().strip()
+        return {"server_ip": ip, "action": "Add this IP to Dhan Developer Portal → API Settings → IP Whitelist"}
+    except Exception as e:
+        return {"server_ip": "unknown", "error": str(e)}
 
 @app.post("/api/trading/exit/{symbol}")
 async def manual_exit_position(symbol: str):
