@@ -215,6 +215,11 @@ class LiveTradingRunner:
             try:
                 from core.persistence import PersistenceManager
                 self._persistence = PersistenceManager()
+            except Exception as p_err:
+                logger.error(f"[Live Runner] Failed to initialize persistence manager: {p_err}")
+
+        if self._persistence is not None:
+            try:
                 logger.info("[Live Runner] Persistence enabled — restoring state from DuckDB...")
 
                 # DuckDB was already restored from R2 in main.py lifespan before connecting.
@@ -273,7 +278,7 @@ class LiveTradingRunner:
                 logger.info("[Live Runner] State restore complete.")
             except Exception as e:
                 logger.error(f"[Live Runner] Persistence restore failed (starting fresh): {e}")
-                self._persistence = None
+                # Don't set self._persistence to None as it was instantiated on startup
 
         # 4. Connect broker fills to notify the UI instantly
         if self.broker is not None:
