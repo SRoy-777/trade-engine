@@ -15,6 +15,7 @@ class WebSocketBroadcaster:
         self._lock = asyncio.Lock()
         self._broadcast_task: Optional[asyncio.Task] = None
         self._is_active = False
+        self._last_balance_check = 0.0
 
     async def register_subscriber(self) -> None:
         """Registers this broadcaster as a visual subscriber to the Event Bus (Priority 10)."""
@@ -118,6 +119,13 @@ class WebSocketBroadcaster:
         # Build mock report when stopped to feed the dashboard correct modes balances
         strat_report = None
         if live_runner.broker_mode == "REAL":
+            import time
+            now_ts = time.time()
+            if now_ts - self._last_balance_check > 10.0:
+                self._last_balance_check = now_ts
+                # Trigger REST API check in uvicorn's threadpool to prevent blocking the socket
+                asyncio.create_task(asyncio.to_thread(live_runner.check_dhan_balance))
+                
             strat_report = {
                 "cash_inr": live_runner.dhan_balance,
                 "net_asset_value_inr": live_runner.dhan_balance,
