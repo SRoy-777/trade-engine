@@ -35,6 +35,32 @@ class LiveTradingRunner:
         self.allocated_percentage = 100.0
         self.broker_mode = "PAPER"
         self.leverage = 5.0
+        self.dhan_balance = 0.0
+        
+        # Load initial config from disk if available
+        config_path = "configs/orb.yaml"
+        if not os.path.exists(config_path) and os.path.exists(os.path.join("..", config_path)):
+            config_path = os.path.join("..", config_path)
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    cfg = yaml.safe_load(f) or {}
+                    self.capital = float(cfg.get("capital", 100000.0))
+                    self.allocated_percentage = float(cfg.get("allocated_percentage", 100.0))
+                    self.broker_mode = str(cfg.get("broker_mode", "PAPER")).upper()
+                    self.leverage = float(cfg.get("leverage", 5.0))
+                    self.enable_live_stocks = bool(cfg.get("enable_live_stocks", False))
+                    self.allocation_strategy = str(cfg.get("allocation_strategy", "SINGLE_STOCK")).upper()
+                    self.allocation_weights = [float(w) for w in cfg.get("allocation_weights", [0.5, 0.3, 0.2])]
+                    raw_symbols = cfg.get("symbols", [])
+                    if isinstance(raw_symbols, list):
+                        self.symbols = raw_symbols
+                    self.priority_ranking = cfg.get("priority_ranking", self.symbols)
+            except Exception as e:
+                logger.error(f"[Live Runner] Failed to load initial configs on startup: {e}")
+        
+        # Fetch initial Dhan balance
+        self.check_dhan_balance()
         
         self.indices: Dict[str, Dict[str, Any]] = {
             "NIFTY_50": {"ltp": 0.0, "change_pct": 0.0, "trend": "NEUTRAL", "open": 0.0},
@@ -407,6 +433,30 @@ class LiveTradingRunner:
         self._watchdog_task = asyncio.create_task(self.watchdog_loop())
         logger.info(f"[Live Runner] Strategy runner and watchdog loop successfully active.")
 
+    def check_dhan_balance(self) -> float:
+        """Fetch Dhan available balance from API REST limits."""
+        client_id = os.getenv("CLIENT_ID", "").strip()
+        access_token = os.getenv("ACCESS_TOKEN", "").strip()
+        if not client_id or not access_token:
+            return 0.0
+        try:
+            import urllib.request
+            import json
+            url = "https://api.dhan.co/v2/fundlimit"
+            headers = {
+                "access-token": access_token,
+                "client-id": client_id,
+                "Content-Type": "application/json"
+            }
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=5) as response:
+                res = json.loads(response.read().decode("utf-8"))
+                bal = float(res.get("availabelBalance", 0.0))
+                self.dhan_balance = bal
+                return bal
+        except Exception:
+            return 0.0
+
     def update_strategy_config(self, config: Dict[str, Any]) -> None:
         """Dynamically updates rankings, weights, and strategies in real-time."""
         if "priority_ranking" in config:
@@ -472,6 +522,7 @@ class LiveTradingRunner:
             logger.error(f"[Live Runner] Failed to persist config to {config_path}: {err}")
             
         dhan_logger.info(f"[Live Runner] Dynamically updated configuration settings.")
+        self.check_dhan_balance()
         self.broadcast_update()
 
     async def watchdog_loop(self) -> None:

@@ -74,10 +74,26 @@ class WebSocketBroadcaster:
 
     def _build_update_message(self) -> Dict[str, Any]:
         """Assembles metrics, status, and ticks into a single JSON payload."""
-        # Direct fallback for live strategy telemetry streams
         from core.live_runner import live_runner
+        
+        # Build core configuration dictionary to always stay sync'd
+        config_data = {
+            "symbols": live_runner.symbols,
+            "priority_ranking": live_runner.priority_ranking,
+            "allocation_strategy": live_runner.allocation_strategy,
+            "allocation_weights": live_runner.allocation_weights,
+            "capital": live_runner.capital,
+            "allocated_percentage": live_runner.allocated_percentage,
+            "broker_mode": live_runner.broker_mode,
+            "leverage": live_runner.leverage,
+            "enable_live_stocks": live_runner.enable_live_stocks
+        }
+
         if live_runner.active:
-            return live_runner.compile_telemetry_message()
+            # Overwrite with active strategy manager runtime reports
+            msg = live_runner.compile_telemetry_message()
+            msg["configuration"] = config_data
+            return msg
 
         metrics = metrics_service.get_metrics()
         status = feed_manager.get_status()
@@ -99,13 +115,27 @@ class WebSocketBroadcaster:
                 "processed_timestamp": self._latest_event.processed_timestamp.isoformat() + "Z",
             }
 
-        return {
+        # Build mock report when stopped to feed the dashboard correct modes balances
+        strat_report = None
+        if live_runner.broker_mode == "REAL":
+            strat_report = {
+                "cash_inr": live_runner.dhan_balance,
+                "net_asset_value_inr": live_runner.dhan_balance,
+                "positions": {},
+                "total_fees_paid_inr": 0.0
+            }
+
+        pulse_msg = {
             "type": "telemetry_pulse",
             "metrics": metrics,
             "status": status,
             "latest_event": latest_event_data,
-            "indices": live_runner.indices
+            "indices": live_runner.indices,
+            "configuration": config_data
         }
+        if strat_report:
+            pulse_msg["strategy_report"] = strat_report
+        return pulse_msg
 
     async def _broadcast_loop(self) -> None:
         """Consolidates metrics and pushes updates to all clients at 10Hz."""
