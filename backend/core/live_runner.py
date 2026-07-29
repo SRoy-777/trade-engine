@@ -82,8 +82,11 @@ class LiveTradingRunner:
                             logger.error(f"[Live Runner] Failed to initialize persistence on startup: {p_err}")
             except Exception as e:
                 logger.error(f"[Live Runner] Failed to load initial configs on startup: {e}")
+                if not hasattr(self, "enable_live_stocks"):
+                    self.enable_live_stocks = False  # ensure attribute exists even after load failure
         else:
             self._persistence = None
+            self.enable_live_stocks = False  # fallback when no config file exists
         
         # Fetch initial Dhan balance
         self.check_dhan_balance()
@@ -97,12 +100,13 @@ class LiveTradingRunner:
         self._prev_connection_ok = True
         self._ui_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         
-        # Watchdog connection checks
+        # Watchdog connection checks — ensure enable_live_stocks always exists (may have been set above from yaml)
         self.last_tick_times: Dict[str, float] = {}
         self.last_ohlc: Dict[str, Dict[str, Any]] = {}
         self.warning_symbols: List[str] = []
         self.connection_ok = True
-        self.enable_live_stocks = False
+        # NOTE: enable_live_stocks is intentionally NOT reset here — it is loaded from orb.yaml above.
+        # Resetting it here would override the yaml value and disable live stock feeds.
         self._watchdog_task: Optional[asyncio.Task] = None
         self.current_bars: Dict[str, Dict[str, Any]] = {}
         self.last_cumulative_volumes: Dict[str, int] = {}
