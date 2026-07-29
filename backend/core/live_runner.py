@@ -165,20 +165,31 @@ class LiveTradingRunner:
         self.leverage = float(config.get("leverage", 5.0))
 
         # REAL mode: capital MUST come from live Dhan balance API.
-        # If the API call fails or returns zero → abort start entirely.
-        # The yaml 'capital' field is for PAPER mode only and is never used as a REAL fallback.
+        # Retries up to 5 times (3s apart) before aborting — no fallback capital ever used.
+        # yaml 'capital' field is for PAPER mode only.
         if self.broker_mode == "REAL":
-            live_balance = self.check_dhan_balance()
+            live_balance = 0.0
+            max_attempts = 5
+            for attempt in range(1, max_attempts + 1):
+                live_balance = self.check_dhan_balance()
+                if live_balance > 0:
+                    break
+                if attempt < max_attempts:
+                    logger.warning(
+                        f"[Live Runner] REAL mode: Dhan balance fetch attempt {attempt}/{max_attempts} returned 0 — "
+                        f"retrying in 3 seconds..."
+                    )
+                    await asyncio.sleep(3)
+
             if live_balance <= 0:
                 logger.error(
-                    "[Live Runner] REAL mode startup ABORTED: Could not fetch live Dhan balance "
-                    "(API returned 0 or failed). No trade will be placed. "
-                    "Resolve Dhan API connectivity and restart the engine."
+                    "[Live Runner] REAL mode startup ABORTED after 5 failed attempts to fetch Dhan balance. "
+                    "No trade will be placed. Fix Dhan API connectivity and restart the engine."
                 )
                 raise RuntimeError(
-                    "REAL mode requires a valid Dhan balance from the API. "
-                    "Balance fetch returned 0 or failed — startup aborted to prevent uncontrolled trading."
+                    "REAL mode: Dhan balance fetch failed after 5 retries — startup aborted."
                 )
+
             logger.info(f"[Live Runner] REAL mode: Dhan balance confirmed — capital limit set to Rs.{live_balance:,.2f}")
             self.capital = live_balance
 

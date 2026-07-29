@@ -430,9 +430,13 @@ class ORBStrategy(BaseStrategy):
             await self.submit_order(self.symbol, side, qty, price=close_price, order_type="MARKET")
         except Exception as e:
             self.pending_entry = None
-            self.trade_taken_today = False
-            dhan_logger.warning(f"[ORB] Entry order placement failed for {self.symbol}: {e}")
-            raise e
+            # Keep trade_taken_today=True — this signal is permanently skipped.
+            # Once API recovers, the engine will look for the next fresh breakout signal,
+            # not retry the signal that failed.
+            dhan_logger.warning(
+                f"[ORB] Entry order SKIPPED for {self.symbol}: API call failed ({e}). "
+                f"Signal discarded — awaiting next breakout."
+            )
 
     async def _close_position(self, packet: MarketPacket, reason: str, override_price: Optional[float] = None) -> None:
         if self.active_trade is None or self.active_trade.get("exit_order_pending"):
