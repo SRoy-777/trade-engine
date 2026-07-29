@@ -70,6 +70,8 @@ const App: React.FC = () => {
   const [priorityRanking, setPriorityRanking] = useState<string[]>(["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"]);
   const [newSymbolInput, setNewSymbolInput] = useState("");
   const [capital, setCapital] = useState<number>(100000);
+  const [paperCapital, setPaperCapital] = useState<number>(100000);
+  const [realCapital, setRealCapital] = useState<number>(60000);
   const [allocatedPercentage, setAllocatedPercentage] = useState<number>(100.0);
   const [brokerMode, setBrokerMode] = useState<string>("PAPER");
   const [leverage, setLeverage] = useState<number>(5);
@@ -93,12 +95,19 @@ const App: React.FC = () => {
     if (strategyConfig && !isConfigInitialized.current) {
       setLocalSymbols(strategyConfig.symbols);
       setPriorityRanking(strategyConfig.priority_ranking);
+      
+      const configMode = strategyConfig.broker_mode || "PAPER";
+      setBrokerMode(configMode);
       setCapital(strategyConfig.capital);
+
+      if (configMode === "REAL") {
+        setRealCapital(strategyConfig.capital);
+      } else {
+        setPaperCapital(strategyConfig.capital);
+      }
+
       if (strategyConfig.allocated_percentage !== undefined) {
         setAllocatedPercentage(strategyConfig.allocated_percentage);
-      }
-      if (strategyConfig.broker_mode !== undefined) {
-        setBrokerMode(strategyConfig.broker_mode);
       }
       setLeverage(strategyConfig.leverage);
       setAllocationStrategy(strategyConfig.allocation_strategy as "SINGLE_STOCK" | "PERCENTAGE_RANKED");
@@ -107,6 +116,18 @@ const App: React.FC = () => {
       isConfigInitialized.current = true;
     }
   }, [strategyConfig]);
+
+  // Keep live/paper capital pool updated from incoming telemetry records
+  useEffect(() => {
+    if (strategyReport && strategyConfig) {
+      const activeMode = strategyConfig.broker_mode || "PAPER";
+      if (activeMode === "REAL") {
+        setRealCapital(strategyReport.cash_inr);
+      } else {
+        setPaperCapital(strategyReport.cash_inr);
+      }
+    }
+  }, [strategyReport, strategyConfig]);
 
   const isRunning = status?.status === "RUNNING";
   const connectionOk = status?.connection_ok !== false;
@@ -612,10 +633,30 @@ const App: React.FC = () => {
     addToast("Capital allocation weights updated successfully", "success");
   };
 
+  const handleToggleMode = (nextMode: "PAPER" | "REAL") => {
+    setBrokerMode(nextMode);
+    isConfigInitialized.current = false;
+    const targetCapital = nextMode === "REAL" ? realCapital : paperCapital;
+    setCapital(targetCapital);
+    updateStrategyConfig({
+      broker_mode: nextMode,
+      capital: targetCapital
+    });
+    addToast(`Switched strategy execution to ${nextMode} mode`, "success");
+  };
+
   // Save Settings panel configuration parameters
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     isConfigInitialized.current = false;
+    
+    // Update local mode cash tracking pools before saving
+    if (brokerMode === "REAL") {
+      setRealCapital(capital);
+    } else {
+      setPaperCapital(capital);
+    }
+
     updateStrategyConfig({
       capital: capital,
       allocated_percentage: allocatedPercentage,
@@ -738,6 +779,38 @@ const App: React.FC = () => {
       {/* 2. MAIN WORKING INTERFACE CONTENT AREA */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto p-6 max-h-screen">
         
+        {/* Global Page Header & Mode Selector Toggle */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-5 mb-5 border-b border-slate-900 gap-4">
+          <div>
+            <h1 className="text-xl font-extrabold text-white tracking-tight capitalize">{activePage === "dashboard" ? "Dashboard Hub" : `${activePage} panel`}</h1>
+            <p className="text-[10px] text-slate-500 font-mono mt-0.5">Trade Execution Terminal control desk</p>
+          </div>
+          
+          <div className="flex items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl shadow-lg relative">
+            <button
+              onClick={() => handleToggleMode("PAPER")}
+              className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all duration-200 cursor-pointer ${
+                brokerMode === "PAPER" 
+                  ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-md shadow-cyan-950/20" 
+                  : "text-slate-500 hover:text-slate-350"
+              }`}
+            >
+              Simulated Paper
+            </button>
+            <button
+              onClick={() => handleToggleMode("REAL")}
+              className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+                brokerMode === "REAL" 
+                  ? "bg-red-500/10 text-red-400 border border-red-500/20 shadow-md shadow-red-950/20 animate-pulse" 
+                  : "text-slate-500 hover:text-slate-350"
+              }`}
+            >
+              {brokerMode === "REAL" && <ShieldAlert className="w-3.5 h-3.5 text-red-400 animate-bounce" />}
+              Live Real Cash
+            </button>
+          </div>
+        </div>
+
         {/* Connection Disconnection Notice Banner */}
         {connectionStatus !== "connected" && (
           <div className="mb-5 flex items-center justify-between px-4 py-3 rounded-lg bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-semibold animate-pulse shadow-md">
@@ -819,13 +892,22 @@ const App: React.FC = () => {
             <div>
               <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Intraday Account Ledger</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-                {[
-                  { label: "Net Asset Value (NAV)", val: strategyReport ? strategyReport.net_asset_value_inr : capital, color: "text-white", bg: "bg-indigo-500/10 text-indigo-400", icon: TrendingUp, sub: "Equity Curve Peak" },
-                  { label: "Available Cash Balance", val: strategyReport ? strategyReport.cash_inr : capital, color: "text-slate-200", bg: "bg-cyan-500/10 text-cyan-400", icon: DollarSign, sub: "Unused Capital" },
-                  { label: "Used Intraday Margin", val: utilizedMargin, color: "text-slate-200", bg: "bg-amber-500/10 text-amber-400", icon: Layers, sub: "Active Exposure" },
-                  { label: "Reserved Margin (10%)", val: utilizedMargin * 0.10, color: "text-slate-350", bg: "bg-slate-800 text-slate-400", icon: ShieldAlert, sub: "Buffered Lock" },
-                  { label: "Remaining Margin", val: (strategyReport ? strategyReport.cash_inr : capital) - utilizedMargin, color: "text-slate-300", bg: "bg-purple-500/10 text-purple-400", icon: TrendingUp, sub: "Free Buying Power" },
-                ].map((item, idx) => {
+                {(() => {
+                  const isConfigModeMatching = strategyConfig?.broker_mode === brokerMode;
+                  const activeNAV = isConfigModeMatching && strategyReport 
+                    ? strategyReport.net_asset_value_inr 
+                    : (brokerMode === "REAL" ? realCapital : paperCapital);
+                  const activeCash = isConfigModeMatching && strategyReport 
+                    ? strategyReport.cash_inr 
+                    : (brokerMode === "REAL" ? realCapital : paperCapital);
+                  return [
+                    { label: "Net Asset Value (NAV)", val: activeNAV, color: "text-white", bg: "bg-indigo-500/10 text-indigo-400", icon: TrendingUp, sub: "Equity Curve Peak" },
+                    { label: "Available Cash Balance", val: activeCash, color: "text-slate-200", bg: "bg-cyan-500/10 text-cyan-400", icon: DollarSign, sub: "Unused Capital" },
+                    { label: "Used Intraday Margin", val: utilizedMargin, color: "text-slate-200", bg: "bg-amber-500/10 text-amber-400", icon: Layers, sub: "Active Exposure" },
+                    { label: "Reserved Margin (10%)", val: utilizedMargin * 0.10, color: "text-slate-350", bg: "bg-slate-800 text-slate-400", icon: ShieldAlert, sub: "Buffered Lock" },
+                    { label: "Remaining Margin", val: activeCash - utilizedMargin, color: "text-slate-300", bg: "bg-purple-500/10 text-purple-400", icon: TrendingUp, sub: "Free Buying Power" },
+                  ];
+                })().map((item, idx) => {
                   const Icon = item.icon;
                   return (
                     <div key={idx} className="bg-slate-900/60 border border-slate-850 rounded-xl p-4.5 shadow-md flex flex-col justify-between h-28">
