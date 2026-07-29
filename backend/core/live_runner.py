@@ -55,6 +55,20 @@ class LiveTradingRunner:
                     raw_symbols = cfg.get("symbols", [])
                     if isinstance(raw_symbols, list):
                         self.symbols = raw_symbols
+                    elif isinstance(raw_symbols, str) and raw_symbols.endswith(".xlsx"):
+                        import pandas as pd
+                        xlsx_path = os.path.join(os.path.dirname(config_path), "..", raw_symbols)
+                        if not os.path.exists(xlsx_path):
+                            xlsx_path = raw_symbols
+                        if not os.path.exists(xlsx_path):
+                            xlsx_path = os.path.join("backend", raw_symbols)
+                        try:
+                            df = pd.read_excel(xlsx_path, header=None)
+                            resolved_symbols = df[0].dropna().astype(str).str.strip().tolist()
+                            self.symbols = [s.upper() for s in resolved_symbols if s]
+                        except Exception as excel_err:
+                            logger.error(f"[Live Runner] Failed to parse Excel watchlist {xlsx_path} on startup: {excel_err}")
+                            self.symbols = ["SBIN"]
                     self.priority_ranking = cfg.get("priority_ranking", self.symbols)
                     
                     # Instantiate persistence manager on startup if enabled
@@ -782,8 +796,8 @@ class LiveTradingRunner:
         self.manager = None
         self.broker = None
         self.strategies = {}
-        self.symbols = []
-        self.priority_ranking = []
+        # Do not clear watchlist config configurations when stopping execution
+        pass
 
     async def _warm_up_strategies(self, mappings: Dict[str, str]) -> None:
         """Fetches historical 5-minute candles from Dhan charts API on startup to warm up strategy indicators."""

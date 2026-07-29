@@ -958,12 +958,13 @@ const App: React.FC = () => {
                 <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Capital Limits Configuration</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {(() => {
-                    const activeCapital = capital * (allocatedPercentage / 100);
+                    const poolCapital = brokerMode === "REAL" ? realCapital : paperCapital;
+                    const activeCapital = poolCapital * (allocatedPercentage / 100);
                     return [
-                      { label: "Max Capital Pool", val: `₹${capital.toLocaleString("en-IN")}` },
-                      { label: "Current Allocated", val: `₹${(allocationStrategy === "SINGLE_STOCK" ? activeCapital : weights.reduce((s, w) => s + w, 0) * activeCapital).toLocaleString("en-IN")}` },
+                      { label: "Max Capital Pool", val: `₹${poolCapital.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` },
+                      { label: "Current Allocated", val: `₹${(allocationStrategy === "SINGLE_STOCK" ? activeCapital : weights.reduce((s, w) => s + w, 0) * activeCapital).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` },
                       { label: "Intraday Leverage", val: `${leverage}x` },
-                      { label: "Total Buying Power", val: `₹${(activeCapital * leverage).toLocaleString("en-IN")}` }
+                      { label: "Total Buying Power", val: `₹${(activeCapital * leverage).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` }
                     ];
                   })().map((card, i) => (
                     <div key={i} className="bg-slate-950/60 border border-slate-900 rounded-lg p-3 text-center">

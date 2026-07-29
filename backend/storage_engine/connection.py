@@ -94,6 +94,16 @@ class DuckDBConnectionManager:
             );
         """)
 
+        # Execute safe migrations to add broker_mode column to existing tables if missing
+        try:
+            self._conn.execute("ALTER TABLE paper_trades ADD COLUMN broker_mode VARCHAR DEFAULT 'PAPER';")
+        except Exception:
+            pass
+        try:
+            self._conn.execute("ALTER TABLE paper_positions ADD COLUMN broker_mode VARCHAR DEFAULT 'PAPER';")
+        except Exception:
+            pass
+
 
     def close(self):
         if self._conn:

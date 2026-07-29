@@ -201,12 +201,16 @@ class PersistenceManager:
             now = self._now_ist()
             direction = "LONG" if active_trade.get("side") == "BUY" else "SHORT"
 
+            # Fetch active broker mode dynamically
+            from core.live_runner import live_runner
+            mode = getattr(live_runner, "broker_mode", "PAPER")
+
             # DuckDB upsert syntax (ON CONFLICT DO UPDATE SET)
             conn.execute("""
                 INSERT INTO paper_positions
                     (symbol, direction, entry_time, entry_price, qty,
-                     stop_loss, take_profit, setup, entry_fees, order_id, session_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     stop_loss, take_profit, setup, entry_fees, order_id, session_date, broker_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (symbol) DO UPDATE SET
                     direction   = EXCLUDED.direction,
                     entry_time  = EXCLUDED.entry_time,
@@ -217,7 +221,8 @@ class PersistenceManager:
                     setup       = EXCLUDED.setup,
                     entry_fees  = EXCLUDED.entry_fees,
                     order_id    = EXCLUDED.order_id,
-                    session_date = EXCLUDED.session_date
+                    session_date = EXCLUDED.session_date,
+                    broker_mode  = EXCLUDED.broker_mode
             """, [
                 symbol,
                 direction,
@@ -230,6 +235,7 @@ class PersistenceManager:
                 active_trade.get("entry_fees", 0.0),
                 active_trade.get("order_id", ""),
                 now.date(),
+                mode,
             ])
             await self._persist_cash(cash, conn)
             logger.info(f"[Persistence] Open position saved to DuckDB: {symbol} {direction} "
@@ -249,12 +255,15 @@ class PersistenceManager:
                 logger.error("[Persistence] on_exit: DuckDB connection is None — skipping")
                 return
             now = self._now_ist()
+            from core.live_runner import live_runner
+            mode = getattr(live_runner, "broker_mode", "PAPER")
+
             conn.execute("""
                 INSERT INTO paper_trades
                     (trade_id, session_date, symbol, direction, setup,
                      entry_time, entry_price, qty, exit_time, exit_price,
-                     gross_pnl, fees, net_pnl, exit_reason, hold_mins)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     gross_pnl, fees, net_pnl, exit_reason, hold_mins, broker_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 trade_record.get("Trade_ID", 0),
                 now.date(),
@@ -271,6 +280,7 @@ class PersistenceManager:
                 trade_record.get("Net_PnL", 0.0),
                 trade_record.get("Exit_Reason", ""),
                 trade_record.get("Hold_Time_Mins", 0),
+                mode,
             ])
             # Remove from open positions
             conn.execute("DELETE FROM paper_positions WHERE symbol = ?",
@@ -304,11 +314,16 @@ class PersistenceManager:
             conn = self._get_conn()
             if conn is None:
                 return result
+                
+            from core.live_runner import live_runner
+            mode = getattr(live_runner, "broker_mode", "PAPER")
+
             rows = conn.execute("""
                 SELECT symbol, direction, entry_time, entry_price, qty,
                        stop_loss, take_profit, setup, entry_fees, order_id
                 FROM paper_positions
-            """).fetchall()
+                WHERE broker_mode = ?
+            """, [mode]).fetchall()
             for row in rows:
                 symbol, direction, entry_time, entry_price, qty, sl, tp, setup, fees, order_id = row
                 side = "BUY" if direction == "LONG" else "SELL"
@@ -344,13 +359,18 @@ class PersistenceManager:
             conn = self._get_conn()
             if conn is None:
                 return result
+                
+            from core.live_runner import live_runner
+            mode = getattr(live_runner, "broker_mode", "PAPER")
+
             rows = conn.execute("""
                 SELECT trade_id, symbol, direction, setup, entry_time, entry_price,
                        qty, exit_time, exit_price, gross_pnl, fees, net_pnl,
                        exit_reason, hold_mins
                 FROM paper_trades
+                WHERE broker_mode = ?
                 ORDER BY entry_time ASC
-            """).fetchall()
+            """, [mode]).fetchall()
             for row in rows:
                 (tid, sym, direction, setup, entry_time, entry_price,
                  qty, exit_time, exit_price, gross_pnl, fees, net_pnl,
