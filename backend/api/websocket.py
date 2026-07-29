@@ -133,13 +133,29 @@ class WebSocketBroadcaster:
                 "total_fees_paid_inr": 0.0
             }
 
+        # Compile all completed historical trades from the DuckDB database when stopped
+        all_trades = []
+        if live_runner._persistence:
+            try:
+                history_dict = live_runner._persistence.load_trade_history()
+                for list_trades in history_dict.values():
+                    for t in list_trades:
+                        t_copy = dict(t)
+                        t_copy["Capital_Utilized"] = (t["Qty"] * t["Entry_Price"]) / live_runner.leverage
+                        t_copy["Leverage"] = live_runner.leverage
+                        all_trades.append(t_copy)
+                all_trades.sort(key=lambda x: x.get("Entry_Time", ""), reverse=True)
+            except Exception as e:
+                logger.error(f"[WS Broadcaster] Failed to load trade history when stopped: {e}")
+
         pulse_msg = {
             "type": "telemetry_pulse",
             "metrics": metrics,
             "status": status,
             "latest_event": latest_event_data,
             "indices": live_runner.indices,
-            "configuration": config_data
+            "configuration": config_data,
+            "trade_history": all_trades
         }
         if strat_report:
             pulse_msg["strategy_report"] = strat_report

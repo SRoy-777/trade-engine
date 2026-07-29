@@ -56,8 +56,19 @@ class LiveTradingRunner:
                     if isinstance(raw_symbols, list):
                         self.symbols = raw_symbols
                     self.priority_ranking = cfg.get("priority_ranking", self.symbols)
+                    
+                    # Instantiate persistence manager on startup if enabled
+                    self._persistence = None
+                    if cfg.get("enable_persistence", False):
+                        try:
+                            from core.persistence import PersistenceManager
+                            self._persistence = PersistenceManager()
+                        except Exception as p_err:
+                            logger.error(f"[Live Runner] Failed to initialize persistence on startup: {p_err}")
             except Exception as e:
                 logger.error(f"[Live Runner] Failed to load initial configs on startup: {e}")
+        else:
+            self._persistence = None
         
         # Fetch initial Dhan balance
         self.check_dhan_balance()
@@ -183,8 +194,7 @@ class LiveTradingRunner:
         self.connection_ok = True
 
         # 4a. Restore persisted state from R2 + DuckDB (if enabled)
-        self._persistence = None
-        if config.get("enable_persistence", False):
+        if self._persistence is None and config.get("enable_persistence", False):
             try:
                 from core.persistence import PersistenceManager
                 self._persistence = PersistenceManager()
@@ -609,7 +619,20 @@ class LiveTradingRunner:
 
         # 2. Compile and sort trade history details
         all_trades = []
-        if self.strategies:
+        if self._persistence:
+            try:
+                history_dict = self._persistence.load_trade_history()
+                for list_trades in history_dict.values():
+                    for t in list_trades:
+                        t_copy = dict(t)
+                        t_copy["Capital_Utilized"] = (t["Qty"] * t["Entry_Price"]) / self.leverage
+                        t_copy["Leverage"] = self.leverage
+                        all_trades.append(t_copy)
+            except Exception as p_err:
+                logger.error(f"[Live Runner] Failed to load trade history from database: {p_err}")
+        
+        # Fallback to in-memory active strategy trade logs if database didn't load any
+        if not all_trades and self.strategies:
             for sym, strat in self.strategies.items():
                 for t in strat.trade_history:
                     t_copy = dict(t)
@@ -617,7 +640,7 @@ class LiveTradingRunner:
                     t_copy["Leverage"] = self.leverage
                     all_trades.append(t_copy)
                     
-            all_trades.sort(key=lambda x: x.get("Entry_Time", ""), reverse=True)
+        all_trades.sort(key=lambda x: x.get("Entry_Time", ""), reverse=True)
 
         # 3. Aggregate tracking indicators
         symbols_status = {}

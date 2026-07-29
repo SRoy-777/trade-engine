@@ -256,7 +256,8 @@ export function useWebSocket(overrideUrl?: string) {
     priorityRanking: string[],
     allocationStrategy: string,
     allocationWeights: number[],
-    enableLiveStocks: boolean
+    enableLiveStocks: boolean,
+    brokerMode: string
   ) => {
     sendAction("start_live_strategy", {
       symbols,
@@ -265,7 +266,8 @@ export function useWebSocket(overrideUrl?: string) {
       priority_ranking: priorityRanking,
       allocation_strategy: allocationStrategy,
       allocation_weights: allocationWeights,
-      enable_live_stocks: enableLiveStocks
+      enable_live_stocks: enableLiveStocks,
+      broker_mode: brokerMode
     });
   }, [sendAction]);
 

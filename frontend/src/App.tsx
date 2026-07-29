@@ -69,8 +69,8 @@ const App: React.FC = () => {
   const [localSymbols, setLocalSymbols] = useState<string[]>(["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"]);
   const [priorityRanking, setPriorityRanking] = useState<string[]>(["SBIN", "BAJFINANCE", "INFY", "HDFCBANK", "TATAMOTORS"]);
   const [newSymbolInput, setNewSymbolInput] = useState("");
-  const [capital, setCapital] = useState<number>(100000);
-  const [paperCapital, setPaperCapital] = useState<number>(100000);
+  const [capital, setCapital] = useState<number>(60000);
+  const [paperCapital, setPaperCapital] = useState<number>(60000);
   const [realCapital, setRealCapital] = useState<number>(60000);
   const [allocatedPercentage, setAllocatedPercentage] = useState<number>(100.0);
   const [brokerMode, setBrokerMode] = useState<string>("PAPER");
@@ -272,9 +272,10 @@ const App: React.FC = () => {
       priorityRanking,
       allocationStrategy,
       weights,
-      enableLiveStocks
+      enableLiveStocks,
+      brokerMode
     );
-    addToast("Live Intraday Paper Trade Runner Initiated", "success");
+    addToast(`Live Intraday ${brokerMode} Trade Runner Initiated`, "success");
   };
 
   // Expose unified trade log (only cover live session trade log)
@@ -647,6 +648,11 @@ const App: React.FC = () => {
       capital: targetCapital
     });
     addToast(`Switched strategy execution to ${nextMode} mode`, "success");
+    
+    // Auto-refresh the window to re-sync initial configurations clean states
+    setTimeout(() => {
+      window.location.reload();
+    }, 800);
   };
 
   // Save Settings panel configuration parameters
