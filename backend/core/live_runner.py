@@ -412,11 +412,19 @@ class LiveTradingRunner:
 
         self.provider.set_packet_callback(on_provider_tick)
         
-        # Pre-load historical 5-minute candles to warm up strategy indicators
-        await self._warm_up_strategies(mappings)
-        
         self.active = True
         await self.provider.start()
+        
+        # Pre-load historical 5-minute candles asynchronously to avoid blocking uvicorn WebSocket callbacks
+        async def run_warmup_safely():
+            try:
+                await self._warm_up_strategies(mappings)
+            except Exception as e:
+                logger.error(f"[Live Runner] Background strategy indicator warmup failed: {e}", exc_info=True)
+                if self.manager:
+                    self.manager.is_warming_up = False
+
+        asyncio.create_task(run_warmup_safely())
         
         # Dhan takes a brief moment to authenticate.
         await asyncio.sleep(1.0)
