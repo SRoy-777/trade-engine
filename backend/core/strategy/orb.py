@@ -392,7 +392,7 @@ class ORBStrategy(BaseStrategy):
             buying_power = min(buying_power, max_allowed_val * 0.99)
         
         import math
-        qty = int(math.floor(buying_power / close_price))
+        qty = math.floor(buying_power / close_price)
         if qty <= 0:
             dhan_logger.warning(f"[ORB] Entry Blocked: Calculated quantity is 0 for {self.symbol} (Price: {close_price}, Buying Power: {buying_power})")
             return
@@ -426,6 +426,9 @@ class ORBStrategy(BaseStrategy):
         }
 
         dhan_logger.info(f"[ORB] Entry Triggered: {side} {qty} {self.symbol} on {setup_name} at close ₹{close_price:.2f} (Avg Vol: {avg_volume:.0f})")
+        if not self.symbol:
+            dhan_logger.warning("[ORB] Entry Blocked: symbol is not set on strategy instance")
+            return
         try:
             await self.submit_order(self.symbol, side, qty, price=close_price, order_type="MARKET")
         except Exception as e:
@@ -456,6 +459,9 @@ class ORBStrategy(BaseStrategy):
         trade["temp_exit_price"] = exit_price
 
         dhan_logger.info(f"[ORB] Exit Triggered: {reason} order submitted for {qty} shares at ₹{exit_price:.2f}")
+        if not self.symbol:
+            dhan_logger.warning("[ORB] Exit Blocked: symbol is not set on strategy instance")
+            return
         try:
             await self.submit_order(self.symbol, side, qty, price=exit_price, order_type="MARKET")
         except Exception as e:
