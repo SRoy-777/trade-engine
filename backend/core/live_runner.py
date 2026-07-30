@@ -305,6 +305,48 @@ class LiveTradingRunner:
                         strat.total_realized_pnl = sum(float(t.get("Net_PnL", 0.0)) for t in history)
                         logger.info(f"[Live Runner] Restored {len(history)} trade history records for {sym} | Realized PnL: Rs.{strat.total_realized_pnl:.2f}")
 
+                # Recalculate fees for any historical REAL trades that have 0.0 fees
+                if self.broker_mode == "REAL" and self.broker:
+                    conn = self._persistence._get_conn()
+                    if conn:
+                        try:
+                            zero_fee_trades = conn.execute(
+                                "SELECT trade_id, session_date, symbol, direction, entry_price, qty, exit_price, gross_pnl "
+                                "FROM paper_trades WHERE broker_mode = 'REAL' AND fees = 0.0"
+                            ).fetchall()
+                            
+                            updated_count = 0
+                            for row in zero_fee_trades:
+                                tid, sdate, sym, direction, entry_price, qty, exit_price, gross_pnl = row
+                                
+                                _fees = 0.0
+                                if hasattr(self.broker, "_calculate_transaction_charges"):
+                                    _entry_val = entry_price * qty
+                                    _exit_val = exit_price * qty
+                                    _fees += self.broker._calculate_transaction_charges("BUY" if direction == "LONG" else "SELL", _entry_val)
+                                    _fees += self.broker._calculate_transaction_charges("SELL" if direction == "LONG" else "BUY", _exit_val)
+                                    
+                                conn.execute(
+                                    "UPDATE paper_trades SET fees = ?, net_pnl = gross_pnl - ? "
+                                    "WHERE trade_id = ? AND session_date = ? AND symbol = ? AND broker_mode = 'REAL'",
+                                    [_fees, _fees, tid, sdate, sym]
+                                )
+                                updated_count += 1
+                                
+                            if updated_count > 0:
+                                logger.info(f"[Live Runner] Recalculated and updated fees/net_pnl for {updated_count} historical REAL trade(s) in DuckDB.")
+                                # Reload the history into strategy classes so memory is also updated
+                                history_by_symbol = self._persistence.load_trade_history()
+                                for sym, history in history_by_symbol.items():
+                                    strat = find_strategy_by_symbol(sym)
+                                    if strat:
+                                        strat.trade_history = history
+                                        strat.total_realized_pnl = sum(float(t.get("Net_PnL", 0.0)) for t in history)
+                                
+                                asyncio.create_task(self._persistence._sync_to_r2())
+                        except Exception as _db_err:
+                            logger.error(f"[Live Runner] Failed to update historical REAL trade fees: {_db_err}")
+
                 # Inject persistence manager into each strategy
                 for strat in self.strategies.values():
                     strat._persistence = self._persistence
