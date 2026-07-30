@@ -452,6 +452,14 @@ class LiveTradingRunner:
                     _entry_price = _buy_avg if _dir == "LONG" else _sell_avg
                     _exit_price = _sell_avg if _dir == "LONG" else _buy_avg
                     
+                    # Calculate estimated transaction charges (brokerage + taxes) using broker logic
+                    _fees = 0.0
+                    if self.broker and hasattr(self.broker, "_calculate_transaction_charges"):
+                        _entry_val = _entry_price * _qty
+                        _exit_val = _exit_price * _qty
+                        _fees += self.broker._calculate_transaction_charges("BUY" if _dir == "LONG" else "SELL", _entry_val)
+                        _fees += self.broker._calculate_transaction_charges("SELL" if _dir == "LONG" else "BUY", _exit_val)
+
                     _now_dt = datetime.now()
                     _trade_rec = {
                         "Trade_ID": len(strat.trade_history) + 1,
@@ -464,8 +472,8 @@ class LiveTradingRunner:
                         "Exit_Time": _now_dt.replace(hour=15, minute=0).isoformat(),
                         "Exit_Price": _exit_price,
                         "Gross_PnL": _realized,
-                        "Fees": 0.0,
-                        "Net_PnL": _realized,
+                        "Fees": _fees,
+                        "Net_PnL": _realized - _fees,
                         "Exit_Reason": "Dhan Sync",
                         "Hold_Time_Mins": 330,
                         "Entry_Candle_Volume": 0,
@@ -844,6 +852,14 @@ class LiveTradingRunner:
                         
                         # 2. Add trade to history
                         _realized = (_exit_price - _entry_price) * _qty if _side_entry == "BUY" else (_entry_price - _exit_price) * _qty
+                        
+                        # Calculate estimated exit transaction charges and add to entry fees
+                        _entry_fees = _strat.active_trade.get("entry_fees", 0.0)
+                        _exit_fees = 0.0
+                        if self.broker and hasattr(self.broker, "_calculate_transaction_charges"):
+                            _exit_fees = self.broker._calculate_transaction_charges(_exit_side, _exit_price * _qty)
+                        _total_fees = _entry_fees + _exit_fees
+
                         _now_ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).replace(tzinfo=None)
                         _trade_rec = {
                             "Trade_ID": len(_strat.trade_history) + 1,
@@ -856,8 +872,8 @@ class LiveTradingRunner:
                             "Exit_Time": _now_ist.isoformat(),
                             "Exit_Price": _exit_price,
                             "Gross_PnL": _realized,
-                            "Fees": _strat.active_trade.get("entry_fees", 0.0),
-                            "Net_PnL": _realized - _strat.active_trade.get("entry_fees", 0.0),
+                            "Fees": _total_fees,
+                            "Net_PnL": _realized - _total_fees,
                             "Exit_Reason": "Manual Exit (Dhan Sync)",
                             "Hold_Time_Mins": int((_now_ist - _strat.active_trade.get("entry_time", _now_ist)).total_seconds() / 60.0) if hasattr(_strat.active_trade.get("entry_time"), "timestamp") else 0,
                             "Entry_Candle_Volume": 0,
