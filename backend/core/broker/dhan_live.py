@@ -75,9 +75,9 @@ class DhanLiveBroker(BaseBroker):
         """Routes the buy/sell order to Dhan API and starts status polling in the background."""
         symbol = order_request["symbol"]
         side = order_request["side"].upper()
-        qty = int(order_request["quantity"])
+        qty = int(order_request.get("qty") or order_request.get("quantity", 0))
         order_type = order_request.get("order_type", "MARKET").upper()
-        price = float(order_request.get("price", 0.0))
+        price = float(order_request.get("price") or 0.0)
         strategy_id = order_request.get("strategy_id", "orb")
 
         # Resolve symbol to security token ID
