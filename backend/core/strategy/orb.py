@@ -433,13 +433,21 @@ class ORBStrategy(BaseStrategy):
             await self.submit_order(self.symbol, side, qty, price=close_price, order_type="MARKET")
         except Exception as e:
             self.pending_entry = None
-            # Keep trade_taken_today=True — this signal is permanently skipped.
-            # Once API recovers, the engine will look for the next fresh breakout signal,
-            # not retry the signal that failed.
-            dhan_logger.warning(
-                f"[ORB] Entry order SKIPPED for {self.symbol}: API call failed ({e}). "
-                f"Signal discarded — awaiting next breakout."
-            )
+            err_str = str(e)
+            if "Single Stock rule active" in err_str or "Allocation block" in err_str:
+                # Another trade is running — defer this signal, don't burn it.
+                # The stock will retry when the next breakout candle arrives after the active trade exits.
+                self.trade_taken_today = False
+                dhan_logger.info(
+                    f"[ORB] Signal for {self.symbol} deferred — another trade is active (SINGLE_STOCK). "
+                    f"Will re-trigger on next valid breakout after the active trade exits."
+                )
+            else:
+                # Real failure (API error, insufficient capital, etc.) — discard this signal permanently.
+                dhan_logger.warning(
+                    f"[ORB] Entry order FAILED for {self.symbol}: {e}. "
+                    f"Signal discarded — awaiting next breakout."
+                )
 
     async def _close_position(self, packet: MarketPacket, reason: str, override_price: Optional[float] = None) -> None:
         if self.active_trade is None or self.active_trade.get("exit_order_pending"):
