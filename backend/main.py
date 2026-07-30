@@ -432,6 +432,47 @@ async def trades_diagnostic():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/diagnostic/recovery")
+async def recovery_diagnostic():
+    """Diagnostic endpoint to inspect Dhan positions and active_trade states in memory."""
+    import os, json
+    
+    # 1. Read JSON file if it exists
+    saved_state = None
+    state_file = "storage/real_active_trade.json"
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, "r") as f:
+                saved_state = json.load(f)
+        except Exception as e:
+            saved_state = {"error": str(e)}
+
+    # 2. Query Dhan positions directly via the broker connection
+    dhan_positions = []
+    broker = getattr(live_runner, "broker", None)
+    if broker and hasattr(broker, "_send_request"):
+        try:
+            dhan_positions = broker._send_request("GET", "/v2/positions")
+        except Exception as e:
+            dhan_positions = {"error": str(e)}
+
+    # 3. Retrieve strategy active trade states in memory
+    strat_states = {}
+    if live_runner.strategies:
+        for sym, strat in live_runner.strategies.items():
+            if strat.active_trade is not None or strat.trade_taken_today or sym in ("LATENTVIEW", "ADANIPORTS", "PAYTM"):
+                strat_states[sym] = {
+                    "active_trade": strat.active_trade,
+                    "trade_taken_today": strat.trade_taken_today,
+                    "positions_dict": getattr(strat, "positions", None)
+                }
+
+    return {
+        "saved_state_file": saved_state,
+        "dhan_positions": dhan_positions,
+        "in_memory_strategies": strat_states
+    }
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket_broadcaster.connect(websocket)
