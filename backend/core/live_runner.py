@@ -323,6 +323,55 @@ class LiveTradingRunner:
 
             self.broker.register_fill_callback(on_broker_fill)
 
+        # 4b. REAL mode: sync any open Dhan positions into strategy state on restart
+        if self.broker_mode == "REAL":
+            try:
+                import urllib.request as _ur, json as _json
+                _token = os.getenv("ACCESS_TOKEN", "").strip()
+                _client = os.getenv("CLIENT_ID", "").strip()
+                _req = _ur.Request(
+                    "https://api.dhan.co/v2/positions",
+                    headers={"access-token": _token, "client-id": _client, "Content-Type": "application/json"},
+                    method="GET"
+                )
+                with _ur.urlopen(_req, timeout=8) as _r:
+                    _positions_data = _json.loads(_r.read().decode())
+
+                _open_positions = [p for p in _positions_data if isinstance(p, dict) and int(p.get("netQty", 0)) != 0]
+                for _pos in _open_positions:
+                    _sym = _pos.get("tradingSymbol", "").strip().upper()
+                    _qty = int(_pos.get("netQty", 0))
+                    _avg = float(_pos.get("costPrice", 0.0))
+                    _side = "BUY" if _qty > 0 else "SELL"
+                    _abs_qty = abs(_qty)
+
+                    # Mirror into broker position dict
+                    if hasattr(self.broker, "_positions"):
+                        self.broker._positions[_sym] = {"qty": float(_qty), "avg_price": _avg}
+
+                    # Restore active_trade on the matching strategy
+                    strat = self.strategies.get(_sym)
+                    if strat and strat.active_trade is None:
+                        strat.active_trade = {
+                            "side": _side,
+                            "qty": _abs_qty,
+                            "entry_price": _avg,
+                            "stop_loss": 0.0,
+                            "take_profit": 0.0,
+                            "initial_risk": 0.0,
+                            "max_price": _avg,
+                            "min_price": _avg,
+                            "exit_order_pending": False,
+                            "restored_on_restart": True
+                        }
+                        strat.trade_taken_today = True
+                        logger.info(f"[Live Runner] REAL position restored on restart: {_sym} {_side} {_abs_qty} @ {_avg}")
+
+                if _open_positions:
+                    logger.info(f"[Live Runner] Synced {len(_open_positions)} open Dhan positions into strategy state.")
+            except Exception as _sync_err:
+                logger.warning(f"[Live Runner] Could not sync open Dhan positions on startup: {_sync_err}")
+
         # 5. Initialize Dhan Market Feed
         self.provider = DhanMarketProvider()
         

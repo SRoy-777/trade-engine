@@ -28,6 +28,7 @@ class StrategyManager:
         }
         
         self.is_warming_up = False
+        self._order_lock = asyncio.Lock()  # Prevents race conditions in SINGLE_STOCK mode
         
         # Register broker fill updates back to this manager
         self.broker.register_fill_callback(self._handle_broker_fill)
@@ -108,51 +109,53 @@ class StrategyManager:
 
     async def process_order(self, order_request: Dict[str, Any]) -> None:
         """Validates order via RiskController. If passed, forwards to the Broker."""
-        if self.is_warming_up:
-            dhan_logger.debug(f"[Strategy Manager] Warmup active. Ignoring order request for {order_request.get('symbol')}.")
-            return
-            
-        strategy_id = order_request["strategy_id"]
-        strategy = self.strategies.get(strategy_id)
-        if not strategy:
-            raise ValueError(f"Unknown strategy ID: {strategy_id}")
-
-        symbol = order_request["symbol"]
-        side = order_request["side"].upper()
-        portfolio = self.broker.get_portfolio()
-        
-        # Determine if this is an opening position order (reductions/exits are always allowed)
-        current_pos_qty = portfolio.get("positions", {}).get(symbol, {}).get("qty", 0.0)
-        is_opening = True
-        if side == "SELL" and current_pos_qty > 0:
-            is_opening = False
-        elif side == "BUY" and current_pos_qty < 0:
-            is_opening = False
-
-        if is_opening:
-            # 1. Verify dynamic capital allocation limit
-            allocated = self.get_allocated_capital(symbol)
-            if allocated <= 0:
-                raise ValueError(f"Allocation block: Symbol {symbol} has no capital allocation under current priority configuration.")
+        async with self._order_lock:  # Serialize submissions - prevents SINGLE_STOCK race conditions
+            if self.is_warming_up:
+                dhan_logger.debug(f"[Strategy Manager] Warmup active. Ignoring order request for {order_request.get('symbol')}.")
+                return
                 
-            # 2. Verify Single Stock constraints
-            if self.allocation_strategy == "SINGLE_STOCK":
-                for strat in self.strategies.values():
-                    if strat.symbol != symbol and (strat.active_trade is not None or getattr(strat, "pending_entry", None) is not None):
-                        raise ValueError(f"Allocation block: Single Stock rule active. Already in trade or order pending for {strat.symbol}.")
+            strategy_id = order_request["strategy_id"]
+            strategy = self.strategies.get(strategy_id)
+            if not strategy:
+                raise ValueError(f"Unknown strategy ID: {strategy_id}")
 
-        try:
-            # 3. Pre-trade Risk Check Gate
-            self.risk_controller.validate_order(order_request, portfolio)
+            symbol = order_request["symbol"]
+            side = order_request["side"].upper()
+            portfolio = self.broker.get_portfolio()
             
-            # 4. Submit to Broker
-            order_id = await self.broker.submit_order(order_request)
-            dhan_logger.info(f"Order processed: Strategy {strategy.name} submitted order {order_id}")
-            
-        except ValueError as risk_error:
-            dhan_logger.warning(f"Order Rejected: Risk/Allocation validation failed: {risk_error}")
-            # Raise exception up to strategy to handle rejection
-            raise risk_error
+            # Determine if this is an opening position order (reductions/exits are always allowed)
+            current_pos_qty = portfolio.get("positions", {}).get(symbol, {}).get("qty", 0.0)
+            is_opening = True
+            if side == "SELL" and current_pos_qty > 0:
+                is_opening = False
+            elif side == "BUY" and current_pos_qty < 0:
+                is_opening = False
+
+            if is_opening:
+                # 1. Verify dynamic capital allocation limit
+                allocated = self.get_allocated_capital(symbol)
+                if allocated <= 0:
+                    raise ValueError(f"Allocation block: Symbol {symbol} has no capital allocation under current priority configuration.")
+                    
+                # 2. Verify Single Stock constraints
+                if self.allocation_strategy == "SINGLE_STOCK":
+                    for strat in self.strategies.values():
+                        if strat.symbol != symbol and (strat.active_trade is not None or getattr(strat, "pending_entry", None) is not None):
+                            raise ValueError(f"Allocation block: Single Stock rule active. Already in trade or order pending for {strat.symbol}.")
+
+            try:
+                # 3. Pre-trade Risk Check Gate
+                self.risk_controller.validate_order(order_request, portfolio)
+                
+                # 4. Submit to Broker
+                order_id = await self.broker.submit_order(order_request)
+                dhan_logger.info(f"Order processed: Strategy {strategy.name} submitted order {order_id}")
+                
+            except ValueError as risk_error:
+                dhan_logger.warning(f"Order Rejected: Risk/Allocation validation failed: {risk_error}")
+                # Raise exception up to strategy to handle rejection
+                raise risk_error
+
 
     async def _handle_broker_fill(self, fill_event: Dict[str, Any]) -> None:
         """Coordinates fill events, updating strategy portfolios and risk metrics."""
