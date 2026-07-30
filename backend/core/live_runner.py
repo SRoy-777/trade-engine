@@ -890,8 +890,15 @@ class LiveTradingRunner:
                 method="POST"
             )
             loop = asyncio.get_running_loop()
+            proxy_url = getattr(self.broker, "_proxy_url", None) if hasattr(self, "broker") else None
+            
             def fetch():
-                with urllib.request.urlopen(req, timeout=10) as response:
+                if proxy_url:
+                    proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+                    opener = urllib.request.build_opener(proxy_handler)
+                else:
+                    opener = urllib.request.build_opener()
+                with opener.open(req, timeout=10) as response:
                     return json.loads(response.read().decode("utf-8"))
             
             res_data = await loop.run_in_executor(None, fetch)
@@ -950,8 +957,15 @@ class LiveTradingRunner:
                     method="POST"
                 )
                 loop = asyncio.get_running_loop()
+                proxy_url = getattr(self.broker, "_proxy_url", None) if hasattr(self, "broker") else None
+                
                 def fetch_stock():
-                    with urllib.request.urlopen(req, timeout=10) as response:
+                    if proxy_url:
+                        proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+                        opener = urllib.request.build_opener(proxy_handler)
+                    else:
+                        opener = urllib.request.build_opener()
+                    with opener.open(req, timeout=10) as response:
                         return json.loads(response.read().decode("utf-8"))
                 
                 res_data = await loop.run_in_executor(None, fetch_stock)

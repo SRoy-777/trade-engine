@@ -37,6 +37,7 @@ class DhanLiveBroker(BaseBroker):
         self._positions: Dict[str, Dict[str, float]] = {}
         self._fill_callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
         self._order_history: Dict[str, Dict[str, Any]] = {}
+        self._last_balance_check = 0.0
 
         dhan_logger.info(f"[Dhan Live Broker] Initialised. Client ID: {self.client_id} | Mappings: {len(symbol_mappings)}")
 
@@ -212,15 +213,18 @@ class DhanLiveBroker(BaseBroker):
         self._fill_callback = callback
 
     def get_portfolio(self) -> Dict[str, Any]:
-        """Queries live available funds from Dhan and returns mapped portfolio state."""
-        # Query fund limits (REST API)
-        response = self._send_request("GET", "/v2/fundlimit")
+        """Queries live available funds from Dhan (rate-limited to once every 10s) and returns mapped portfolio state."""
+        import time
+        now = time.time()
         
-        # Fallback to local cash limit if API fails or is offline
+        # Only query the Dhan REST API if 10 seconds have passed to avoid blocking the event loop at 10Hz
+        if now - self._last_balance_check > 10.0:
+            self._last_balance_check = now
+            response = self._send_request("GET", "/v2/fundlimit")
+            if "availabelBalance" in response:
+                self._cash = float(response["availabelBalance"])
+
         available_balance = self._cash
-        if "availabelBalance" in response:
-            available_balance = float(response["availabelBalance"])
-            self._cash = available_balance  # Keep local cache updated
 
         # Calculate unrealized pnl from local position mirrors
         return {
