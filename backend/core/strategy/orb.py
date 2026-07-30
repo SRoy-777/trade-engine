@@ -158,6 +158,10 @@ class ORBStrategy(BaseStrategy):
             sl = trade["stop_loss"]
             tp = trade["take_profit"]
 
+            # Skip SL/TP checks for positions restored on restart (SL/TP are 0 placeholders)
+            if trade.get("restored_on_restart") and sl == 0.0 and tp == 0.0:
+                return
+
             if is_long:
                 if getattr(packet, "is_live_tick", False):
                     # Live Trading: Exit checks based on Last Traded Price (ltp)
@@ -167,6 +171,7 @@ class ORBStrategy(BaseStrategy):
                     elif packet.ltp >= tp:
                         await self._close_position(packet, "Take Profit", packet.ltp)
                         return
+
                         
                     # Trailing stop update in live trading
                     if self.enable_trailing_sl:
