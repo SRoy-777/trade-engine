@@ -1,4 +1,6 @@
 import yaml
+import json
+import os
 import logging
 from datetime import datetime, date
 from typing import Any, List, Optional
@@ -6,6 +8,30 @@ from core.strategy.base import BaseStrategy
 from providers.market.dhan.models import MarketPacket
 
 dhan_logger = logging.getLogger("dhan_provider")
+
+REAL_TRADE_STATE_FILE = "storage/real_active_trade.json"
+
+def _save_real_trade_state(symbol: str, active_trade: dict) -> None:
+    """Persists active REAL trade state (with SL/TP) to disk for restart recovery."""
+    try:
+        os.makedirs("storage", exist_ok=True)
+        state = {"symbol": symbol, "trade": active_trade.copy()}
+        # Convert datetime objects to ISO strings
+        for k, v in state["trade"].items():
+            if isinstance(v, datetime):
+                state["trade"][k] = v.isoformat()
+        with open(REAL_TRADE_STATE_FILE, "w") as f:
+            json.dump(state, f)
+    except Exception as e:
+        dhan_logger.warning(f"[ORB] Could not save real trade state: {e}")
+
+def _clear_real_trade_state() -> None:
+    """Removes the persisted REAL trade state file after trade exits."""
+    try:
+        if os.path.exists(REAL_TRADE_STATE_FILE):
+            os.remove(REAL_TRADE_STATE_FILE)
+    except Exception:
+        pass
 
 class ORBStrategy(BaseStrategy):
     """
@@ -107,7 +133,11 @@ class ORBStrategy(BaseStrategy):
             self.curr_day_high = None
             self.curr_day_low = None
             self.opening_range_set = False
-            self.trade_taken_today = False
+            # Only reset trade_taken_today if there is no active trade reloaded
+            if self.active_trade is None:
+                self.trade_taken_today = False
+            else:
+                self.trade_taken_today = True
             self.pending_entry = None
             
         # Append data to lists
@@ -541,6 +571,12 @@ class ORBStrategy(BaseStrategy):
             )
             self.pending_entry = None
 
+            # Update strat.positions for UI and P&L tracking
+            self.apply_fill(symbol, side, qty, price)
+
+            # Save full trade state (with SL/TP) to disk for restart recovery
+            _save_real_trade_state(self.symbol, self.active_trade)
+
             # Persist open position to DuckDB + R2 (background, does not block trade)
             if self._persistence is not None:
                 try:
@@ -601,6 +637,13 @@ class ORBStrategy(BaseStrategy):
                 f"[ORB] Position Closed: {trade_record['Exit_Reason']} fill at ₹{price:.2f}. "
                 f"Gross PnL: ₹{gross_pnl:.2f}, Fees: ₹{total_fees:.2f}, Net PnL: ₹{net_pnl:.2f}, Hold Time: {hold_time_mins} mins"
             )
+
+            # Update strat.positions for UI and P&L tracking
+            exit_side = "SELL" if side_entry == "BUY" else "BUY"
+            self.apply_fill(symbol, exit_side, qty, price)
+
+            # Clear persisted trade state file
+            _clear_real_trade_state()
 
             # Persist closed trade to DuckDB + R2 (background, does not block trade)
             if self._persistence is not None:
