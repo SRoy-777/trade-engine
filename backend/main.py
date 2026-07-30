@@ -384,6 +384,34 @@ async def persistence_diagnostic():
 
     return result
 
+@app.get("/api/diagnostic/strategies")
+async def strategy_diagnostic():
+    """Diagnose the strategy manager and individual strategy states in memory."""
+    if not live_runner.active:
+        return {"error": "Live runner is not active"}
+    
+    states = {}
+    if live_runner.strategies:
+        for sym, strat in live_runner.strategies.items():
+            states[sym] = {
+                "is_active": strat.is_active,
+                "opening_range_set": strat.opening_range_set,
+                "curr_day_high": strat.curr_day_high,
+                "curr_day_low": strat.curr_day_low,
+                "opening_range_candles_count": len(strat.daily_opening_range_candles),
+                "trade_taken_today": strat.trade_taken_today,
+                "pending_entry": strat.pending_entry is not None,
+                "candles_count": len(getattr(strat, "opens", []))
+            }
+    
+    return {
+        "live_runner_active": live_runner.active,
+        "connection_ok": live_runner.connection_ok,
+        "symbols_count": len(live_runner.symbols),
+        "is_warming_up": live_runner.manager.is_warming_up if live_runner.manager else None,
+        "strategies": states
+    }
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket_broadcaster.connect(websocket)
