@@ -38,6 +38,7 @@ class DhanLiveBroker(BaseBroker):
         self._fill_callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
         self._order_history: Dict[str, Dict[str, Any]] = {}
         self._last_balance_check = 0.0
+        self._last_prices: Dict[str, float] = {}
 
         dhan_logger.info(f"[Dhan Live Broker] Initialised. Client ID: {self.client_id} | Mappings: {len(symbol_mappings)}")
 
@@ -235,8 +236,10 @@ class DhanLiveBroker(BaseBroker):
         }
 
     async def on_tick(self, packet: MarketPacket) -> None:
-        """Live broker does not require mock tick fills execution matching."""
-        pass
+        """Updates the local cache of last known prices for telemetry display."""
+        symbol = packet.security_id
+        if symbol:
+            self._last_prices[symbol] = packet.ltp
 
     def _calculate_transaction_charges(self, side: str, turnover: float) -> float:
         """Dhan's transaction fee calculation logic."""
