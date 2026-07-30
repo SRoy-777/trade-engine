@@ -801,12 +801,112 @@ class LiveTradingRunner:
         self.check_dhan_balance()
         self.broadcast_update()
 
+    async def _sync_live_positions_runtime(self) -> None:
+        """Periodically queries Dhan live positions at runtime to synchronize manual/external exits."""
+        try:
+            import json
+            loop = asyncio.get_running_loop()
+            # Fetch positions via broker proxy
+            _positions_data = await loop.run_in_executor(
+                None, lambda: self.broker._send_request("GET", "/v2/positions")
+            )
+            if isinstance(_positions_data, dict) and "error" in _positions_data:
+                return
+
+            if not isinstance(_positions_data, list):
+                return
+
+            # Open symbols from Dhan
+            _open_symbols = set()
+            for _pos in _positions_data:
+                if isinstance(_pos, dict) and int(_pos.get("netQty", 0)) != 0:
+                    _sym = _pos.get("tradingSymbol", "").strip().upper().replace("-EQ", "")
+                    _open_symbols.add(_sym)
+
+            # Check our in-memory active trades
+            for _sym, _strat in self.strategies.items():
+                if _strat.active_trade is not None:
+                    # If this strategy has an active trade in memory but is NOT open in Dhan, it was manually closed!
+                    if _sym not in _open_symbols:
+                        logger.info(f"[Live Runner] Runtime Sync: position for {_sym} was manually closed on Dhan. Releasing in-memory state.")
+                        
+                        # 1. Update strat.positions to netQty 0
+                        _side_entry = _strat.active_trade["side"]
+                        _exit_side = "SELL" if _side_entry == "BUY" else "BUY"
+                        _qty = _strat.active_trade["qty"]
+                        _entry_price = _strat.active_trade["entry_price"]
+                        
+                        # Fetch last close or use entry price
+                        _exit_price = self.last_ohlc.get(_sym, {}).get("close") or _entry_price
+                        
+                        # Apply fill to close
+                        _strat.apply_fill(_sym, _exit_side, _qty, _exit_price)
+                        
+                        # 2. Add trade to history
+                        _realized = (_exit_price - _entry_price) * _qty if _side_entry == "BUY" else (_entry_price - _exit_price) * _qty
+                        _now_ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).replace(tzinfo=None)
+                        _trade_rec = {
+                            "Trade_ID": len(_strat.trade_history) + 1,
+                            "Symbol": _sym,
+                            "Direction": "LONG" if _side_entry == "BUY" else "SHORT",
+                            "Setup": _strat.active_trade.get("setup", "ORB"),
+                            "Entry_Time": _strat.active_trade.get("entry_time", _now_ist).isoformat() if hasattr(_strat.active_trade.get("entry_time"), "isoformat") else str(_strat.active_trade.get("entry_time")),
+                            "Entry_Price": _entry_price,
+                            "Qty": _qty,
+                            "Exit_Time": _now_ist.isoformat(),
+                            "Exit_Price": _exit_price,
+                            "Gross_PnL": _realized,
+                            "Fees": _strat.active_trade.get("entry_fees", 0.0),
+                            "Net_PnL": _realized - _strat.active_trade.get("entry_fees", 0.0),
+                            "Exit_Reason": "Manual Exit (Dhan Sync)",
+                            "Hold_Time_Mins": int((_now_ist - _strat.active_trade.get("entry_time", _now_ist)).total_seconds() / 60.0) if hasattr(_strat.active_trade.get("entry_time"), "timestamp") else 0,
+                            "Entry_Candle_Volume": 0,
+                            "Prev_Candle_Direction": "N/A",
+                            "Trade_Trend": "N/A",
+                            "Trade_Type": "ORB"
+                        }
+                        _strat.trade_history.append(_trade_rec)
+                        _strat.total_realized_pnl += _trade_rec["Net_PnL"]
+                        
+                        # 3. Clean up strategy variables
+                        _strat.active_trade = None
+                        _strat.pending_entry = None
+                        
+                        # Clear persisted JSON file if it is for this symbol
+                        _state_file = "storage/real_active_trade.json"
+                        if os.path.exists(_state_file):
+                            try:
+                                with open(_state_file, "r") as _f:
+                                    _saved_state = json.load(_f)
+                                if _saved_state.get("symbol") == _sym:
+                                    os.remove(_state_file)
+                            except Exception:
+                                pass
+                                
+                        # Save closed trade to DB
+                        if self._persistence:
+                            await self._persistence.on_exit(_trade_rec, self.broker._cash)
+
+            # Trigger UI broadcast
+            self.broadcast_update()
+        except Exception as e:
+            logger.error(f"[Live Runner] _sync_live_positions_runtime error: {e}")
+
     async def watchdog_loop(self) -> None:
         """Periodically checks individual symbols data feeds and overall Dhan connection status."""
         while self.active:
             try:
                 await asyncio.sleep(5)
                 now = datetime.now().timestamp()
+                
+                # Periodically sync positions from Dhan in REAL mode to catch manual exits
+                if self.broker_mode == "REAL" and self.broker and hasattr(self.broker, "_send_request"):
+                    # Check every 15 seconds (every 3 iterations of 5s watchdog)
+                    self._sync_counter = getattr(self, "_sync_counter", 0) + 1
+                    if self._sync_counter >= 3:
+                        self._sync_counter = 0
+                        asyncio.create_task(self._sync_live_positions_runtime())
+
                 
                 # Check for regular NSE market hours (9:15 to 15:30) in IST
                 ist_tz = timezone(timedelta(hours=5, minutes=30))
