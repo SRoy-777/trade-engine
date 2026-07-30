@@ -412,6 +412,26 @@ async def strategy_diagnostic():
         "strategies": states
     }
 
+@app.get("/api/diagnostic/trades")
+async def trades_diagnostic():
+    """Returns all rows in the paper_trades table from the DuckDB database."""
+    pm = getattr(live_runner, "_persistence", None)
+    if pm is None:
+        return {"error": "Persistence not initialised"}
+    conn = pm._get_conn()
+    if conn is None:
+        return {"error": "Could not connect to database"}
+    try:
+        rows = conn.execute("SELECT * FROM paper_trades ORDER BY entry_time DESC").fetchall()
+        # Get column names
+        cols = [c[0] for c in conn.description]
+        trades = []
+        for r in rows:
+            trades.append(dict(zip(cols, r)))
+        return {"count": len(trades), "trades": trades}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket_broadcaster.connect(websocket)
