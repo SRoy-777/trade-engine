@@ -302,7 +302,8 @@ class LiveTradingRunner:
                     strat = find_strategy_by_symbol(sym)
                     if strat:
                         strat.trade_history = history
-                        logger.info(f"[Live Runner] Restored {len(history)} trade history records for {sym}")
+                        strat.total_realized_pnl = sum(float(t.get("Net_PnL", 0.0)) for t in history)
+                        logger.info(f"[Live Runner] Restored {len(history)} trade history records for {sym} | Realized PnL: Rs.{strat.total_realized_pnl:.2f}")
 
                 # Inject persistence manager into each strategy
                 for strat in self.strategies.values():
@@ -322,24 +323,38 @@ class LiveTradingRunner:
                 self.broadcast_update()
 
             self.broker.register_fill_callback(on_broker_fill)
-
-        # 4b. REAL mode: sync any open Dhan positions into strategy state on restart
+        # 4b. REAL mode: restore active trade state on restart (SL/TP from JSON file, position from Dhan API)
         if self.broker_mode == "REAL":
             try:
                 import urllib.request as _ur, json as _json
-                _token = os.getenv("ACCESS_TOKEN", "").strip()
-                _client = os.getenv("CLIENT_ID", "").strip()
-                _req = _ur.Request(
-                    "https://api.dhan.co/v2/positions",
-                    headers={"access-token": _token, "client-id": _client, "Content-Type": "application/json"},
-                    method="GET"
-                )
-                with _ur.urlopen(_req, timeout=8) as _r:
-                    _positions_data = _json.loads(_r.read().decode())
+
+                # Step 1: Load persisted trade state (has SL/TP) if it exists
+                _saved_state = None
+                _state_file = "storage/real_active_trade.json"
+                if os.path.exists(_state_file):
+                    try:
+                        with open(_state_file, "r") as _f:
+                            _saved_state = _json.load(_f)
+                        logger.info(f"[Live Runner] Loaded persisted trade state: {_saved_state.get('symbol')}")
+                    except Exception as _je:
+                        logger.warning(f"[Live Runner] Could not load trade state JSON: {_je}")
+
+                # Step 2: Query Dhan live positions to confirm what's actually open
+                if not self.broker or not hasattr(self.broker, "_send_request"):
+                    logger.warning("[Live Runner] Broker not initialised or missing _send_request logic - skipping positions sync")
+                    return
+
+                _positions_data = self.broker._send_request("GET", "/v2/positions")
+                if isinstance(_positions_data, dict) and "error" in _positions_data:
+                    raise ValueError(_positions_data.get("error", "Unknown Dhan REST error"))
+
+                if not isinstance(_positions_data, list):
+                    _positions_data = []
 
                 _open_positions = [p for p in _positions_data if isinstance(p, dict) and int(p.get("netQty", 0)) != 0]
                 for _pos in _open_positions:
-                    _sym = _pos.get("tradingSymbol", "").strip().upper()
+                    # Strip -EQ suffix Dhan sometimes appends
+                    _sym = _pos.get("tradingSymbol", "").strip().upper().replace("-EQ", "")
                     _qty = int(_pos.get("netQty", 0))
                     _avg = float(_pos.get("costPrice", 0.0))
                     _side = "BUY" if _qty > 0 else "SELL"
@@ -349,26 +364,156 @@ class LiveTradingRunner:
                     if hasattr(self.broker, "_positions"):
                         self.broker._positions[_sym] = {"qty": float(_qty), "avg_price": _avg}
 
-                    # Restore active_trade on the matching strategy
                     strat = self.strategies.get(_sym)
                     if strat and strat.active_trade is None:
+                        # Use saved SL/TP if this is the same symbol
+                        _sl, _tp, _risk = 0.0, 0.0, 0.0
+                        _restored_full = False
+                        if _saved_state and _saved_state.get("symbol") == _sym:
+                            _t = _saved_state.get("trade", {})
+                            _sl = float(_t.get("stop_loss", 0.0))
+                            _tp = float(_t.get("take_profit", 0.0))
+                            _risk = float(_t.get("initial_risk", 0.0))
+                            _restored_full = _sl > 0 and _tp > 0
+                            logger.info(f"[Live Runner] Restored full SL/TP for {_sym}: SL={_sl}, TP={_tp}")
+
                         strat.active_trade = {
                             "side": _side,
                             "qty": _abs_qty,
                             "entry_price": _avg,
-                            "stop_loss": 0.0,
-                            "take_profit": 0.0,
-                            "initial_risk": 0.0,
+                            "stop_loss": _sl,
+                            "take_profit": _tp,
+                            "initial_risk": _risk,
                             "max_price": _avg,
                             "min_price": _avg,
                             "exit_order_pending": False,
-                            "restored_on_restart": True
+                            "setup": "Restored",
+                            "trigger_volume": 0,
+                            "prev_candle_dir": "N/A",
+                            "trade_trend": "N/A",
+                            "trade_type": "N/A",
+                            "entry_fees": 0.0,
+                            "restored_on_restart": not _restored_full  # Only skip SL/TP if we don't have valid levels
                         }
                         strat.trade_taken_today = True
-                        logger.info(f"[Live Runner] REAL position restored on restart: {_sym} {_side} {_abs_qty} @ {_avg}")
+
+                        # Update strat.positions so UI positions panel shows it
+                        strat.apply_fill(_sym, _side, _abs_qty, _avg)
+
+                        logger.info(f"[Live Runner] Position restored: {_sym} {_side} {_abs_qty} @ {_avg} | Full SL/TP: {_restored_full}")
 
                 if _open_positions:
-                    logger.info(f"[Live Runner] Synced {len(_open_positions)} open Dhan positions into strategy state.")
+                    logger.info(f"[Live Runner] Synced {len(_open_positions)} open Dhan position(s) into strategy state.")
+                elif _saved_state:
+                    # State file exists but Dhan shows no open positions → trade was closed, clean up
+                    logger.info("[Live Runner] Trade state file exists but no open Dhan positions — clearing stale state file.")
+                    try:
+                        os.remove(_state_file)
+                    except Exception:
+                        pass
+
+                # Step 3: Handle closed positions (synthesize trades to ensure P/L matches Dhan)
+                _closed_positions = [p for p in _positions_data if isinstance(p, dict) and int(p.get("netQty", 0)) == 0 and (int(p.get("dayBuyQty", 0)) > 0 or int(p.get("daySellQty", 0)) > 0)]
+                
+                # Fetch existing symbols traded today from database to prevent duplicate restoration
+                _today_str = datetime.now().strftime("%Y-%m-%d")
+                _existing_today = []
+                if self._persistence:
+                    _conn = self._persistence._get_conn()
+                    if _conn:
+                        try:
+                            _existing_today = [r[0] for r in _conn.execute(
+                                "SELECT symbol FROM paper_trades WHERE session_date = ?", [_today_str]
+                            ).fetchall()]
+                        except Exception:
+                            pass
+
+                _synced_closed_count = 0
+                for _pos in _closed_positions:
+                    _sym = _pos.get("tradingSymbol", "").strip().upper().replace("-EQ", "")
+                    if _sym in _existing_today:
+                        continue
+                    
+                    strat = self.strategies.get(_sym)
+                    if not strat:
+                        continue
+
+                    _realized = float(_pos.get("realizedProfit", 0.0))
+                    _buy_avg = float(_pos.get("buyAvg", 0.0))
+                    _sell_avg = float(_pos.get("sellAvg", 0.0))
+                    _qty = int(_pos.get("dayBuyQty", 0))
+                    
+                    _dir = "LONG"
+                    if _realized < 0:
+                        _dir = "LONG" if _buy_avg > _sell_avg else "SHORT"
+                    else:
+                        _dir = "LONG" if _sell_avg > _buy_avg else "SHORT"
+                        
+                    _entry_price = _buy_avg if _dir == "LONG" else _sell_avg
+                    _exit_price = _sell_avg if _dir == "LONG" else _buy_avg
+                    
+                    _now_dt = datetime.now()
+                    _trade_rec = {
+                        "Trade_ID": len(strat.trade_history) + 1,
+                        "Symbol": _sym,
+                        "Direction": _dir,
+                        "Setup": "Dhan Sync",
+                        "Entry_Time": _now_dt.replace(hour=9, minute=30).isoformat(),
+                        "Entry_Price": _entry_price,
+                        "Qty": _qty,
+                        "Exit_Time": _now_dt.replace(hour=15, minute=0).isoformat(),
+                        "Exit_Price": _exit_price,
+                        "Gross_PnL": _realized,
+                        "Fees": 0.0,
+                        "Net_PnL": _realized,
+                        "Exit_Reason": "Dhan Sync",
+                        "Hold_Time_Mins": 330,
+                        "Entry_Candle_Volume": 0,
+                        "Prev_Candle_Direction": "N/A",
+                        "Trade_Trend": "N/A",
+                        "Trade_Type": "ORB"
+                    }
+                    
+                    strat.trade_history.append(_trade_rec)
+                    strat.total_realized_pnl += _realized
+                    strat.trade_taken_today = True
+                    _synced_closed_count += 1
+                    
+                    if self._persistence:
+                        try:
+                            _conn = self._persistence._get_conn()
+                            if _conn:
+                                _conn.execute("""
+                                    INSERT INTO paper_trades
+                                        (trade_id, session_date, symbol, direction, setup,
+                                         entry_time, entry_price, qty, exit_time, exit_price,
+                                         gross_pnl, fees, net_pnl, exit_reason, hold_mins, broker_mode)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'REAL')
+                                """, [
+                                    _trade_rec["Trade_ID"],
+                                    _today_str,
+                                    _sym,
+                                    _dir,
+                                    "Dhan Sync",
+                                    _trade_rec["Entry_Time"],
+                                    _entry_price,
+                                    _qty,
+                                    _trade_rec["Exit_Time"],
+                                    _exit_price,
+                                    _realized,
+                                    0.0,
+                                    _realized,
+                                    "Dhan Sync",
+                                    330
+                                ])
+                        except Exception as _db_err:
+                            logger.error(f"[Live Runner] Failed to insert synced closed trade: {_db_err}")
+
+                if _synced_closed_count > 0:
+                    logger.info(f"[Live Runner] Synced {_synced_closed_count} closed Dhan trade(s) into database and strategy state.")
+                    if self._persistence:
+                        asyncio.create_task(self._persistence._sync_to_r2())
+
             except Exception as _sync_err:
                 logger.warning(f"[Live Runner] Could not sync open Dhan positions on startup: {_sync_err}")
 
@@ -571,13 +716,21 @@ class LiveTradingRunner:
                 "client-id": client_id,
                 "Content-Type": "application/json"
             }
+            proxy = os.getenv("DHAN_PROXY_URL", "").strip()
+            if proxy:
+                proxy_handler = urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+                opener = urllib.request.build_opener(proxy_handler)
+            else:
+                opener = urllib.request.build_opener()
+
             req = urllib.request.Request(url, headers=headers, method="GET")
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with opener.open(req, timeout=5) as response:
                 res = json.loads(response.read().decode("utf-8"))
                 bal = float(res.get("availabelBalance", 0.0))
                 self.dhan_balance = bal
                 return bal
-        except Exception:
+        except Exception as e:
+            logger.error(f"[Live Runner] check_dhan_balance error: {e}")
             return 0.0
 
     def update_strategy_config(self, config: Dict[str, Any]) -> None:
