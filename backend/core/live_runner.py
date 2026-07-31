@@ -816,76 +816,117 @@ class LiveTradingRunner:
             if not isinstance(_positions_data, list):
                 return
 
-            # Open symbols from Dhan
-            _open_symbols = set()
+            # Open positions map from Dhan
+            _open_positions_map = {}
             for _pos in _positions_data:
                 if isinstance(_pos, dict) and int(_pos.get("netQty", 0)) != 0:
                     _sym = _pos.get("tradingSymbol", "").strip().upper().replace("-EQ", "")
-                    _open_symbols.add(_sym)
+                    _open_positions_map[_sym] = _pos
 
-            # Check our in-memory active trades
+            # Sync in-memory strategy states with Dhan positions
             for _sym, _strat in self.strategies.items():
-                if _strat.active_trade is not None:
-                    # If this strategy has an active trade in memory but is NOT open in Dhan, it was manually closed!
-                    if _sym not in _open_symbols:
-                        logger.info(f"[Live Runner] Runtime Sync: position for {_sym} was manually closed on Dhan. Releasing in-memory state.")
-                        
-                        # 1. Update strat.positions to netQty 0
-                        _side_entry = _strat.active_trade["side"]
-                        _exit_side = "SELL" if _side_entry == "BUY" else "BUY"
-                        _qty = _strat.active_trade["qty"]
-                        _entry_price = _strat.active_trade["entry_price"]
-                        
-                        # Fetch last close or use entry price
-                        _exit_price = self.last_ohlc.get(_sym, {}).get("close") or _entry_price
-                        
-                        # Apply fill to close
-                        _strat.apply_fill(_sym, _exit_side, _qty, _exit_price)
-                        
-                        # 2. Add trade to history
-                        _realized = (_exit_price - _entry_price) * _qty if _side_entry == "BUY" else (_entry_price - _exit_price) * _qty
-                        _now_ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).replace(tzinfo=None)
-                        _trade_rec = {
-                            "Trade_ID": len(_strat.trade_history) + 1,
-                            "Symbol": _sym,
-                            "Direction": "LONG" if _side_entry == "BUY" else "SHORT",
-                            "Setup": _strat.active_trade.get("setup", "ORB"),
-                            "Entry_Time": _strat.active_trade.get("entry_time", _now_ist).isoformat() if hasattr(_strat.active_trade.get("entry_time"), "isoformat") else str(_strat.active_trade.get("entry_time")),
-                            "Entry_Price": _entry_price,
-                            "Qty": _qty,
-                            "Exit_Time": _now_ist.isoformat(),
-                            "Exit_Price": _exit_price,
-                            "Gross_PnL": _realized,
-                            "Fees": _strat.active_trade.get("entry_fees", 0.0),
-                            "Net_PnL": _realized - _strat.active_trade.get("entry_fees", 0.0),
-                            "Exit_Reason": "Manual Exit (Dhan Sync)",
-                            "Hold_Time_Mins": int((_now_ist - _strat.active_trade.get("entry_time", _now_ist)).total_seconds() / 60.0) if hasattr(_strat.active_trade.get("entry_time"), "timestamp") else 0,
-                            "Entry_Candle_Volume": 0,
-                            "Prev_Candle_Direction": "N/A",
-                            "Trade_Trend": "N/A",
-                            "Trade_Type": "ORB"
+                if _sym in _open_positions_map:
+                    _pos = _open_positions_map[_sym]
+                    # If Dhan has an open position but strategy active_trade is None, sync open trade into strategy
+                    if _strat.active_trade is None:
+                        _net_qty = int(_pos.get("netQty", 0))
+                        _side = "BUY" if _net_qty > 0 else "SELL"
+                        _qty = abs(_net_qty)
+                        _entry_price = float(_pos.get("buyAvg") or _pos.get("costPrice") or _pos.get("price") or 0.0)
+                        if _entry_price <= 0:
+                            _entry_price = self.last_ohlc.get(_sym, {}).get("close") or 0.0
+
+                        _sl_pct = getattr(_strat, "stop_loss_pct", 1.0)
+                        _tp_pct = getattr(_strat, "take_profit_pct", 1.5)
+                        if _side == "BUY":
+                            _sl = round((_entry_price * (1.0 - _sl_pct / 100.0)) * 20) / 20
+                            _tp = round((_entry_price * (1.0 + _tp_pct / 100.0)) * 20) / 20
+                        else:
+                            _sl = round((_entry_price * (1.0 + _sl_pct / 100.0)) * 20) / 20
+                            _tp = round((_entry_price * (1.0 - _tp_pct / 100.0)) * 20) / 20
+                        _initial_risk = abs(_entry_price - _sl)
+
+                        _strat.active_trade = {
+                            "order_id": str(_pos.get("positionId", "dhan_synced")),
+                            "side": _side,
+                            "qty": _qty,
+                            "entry_price": _entry_price,
+                            "entry_time": datetime.now(),
+                            "setup": "ORB Breakout",
+                            "initial_risk": _initial_risk,
+                            "stop_loss": _sl,
+                            "take_profit": _tp,
+                            "max_price": _entry_price,
+                            "min_price": _entry_price,
+                            "entry_fees": 0.0,
+                            "trigger_volume": 0,
+                            "prev_candle_dir": "UNKNOWN",
+                            "trade_trend": "BULLISH" if _side == "BUY" else "BEARISH",
+                            "trade_type": "ORB_BREAKOUT"
                         }
-                        _strat.trade_history.append(_trade_rec)
-                        _strat.total_realized_pnl += _trade_rec["Net_PnL"]
-                        
-                        # 3. Clean up strategy variables
-                        _strat.active_trade = None
-                        _strat.pending_entry = None
-                        
-                        # Clear persisted JSON file if it is for this symbol
-                        _state_file = "storage/real_active_trade.json"
-                        if os.path.exists(_state_file):
-                            try:
-                                with open(_state_file, "r") as _f:
-                                    _saved_state = json.load(_f)
-                                if _saved_state.get("symbol") == _sym:
-                                    os.remove(_state_file)
-                            except Exception:
-                                pass
-                                
-                        # Save closed trade to DB
-                        if self._persistence:
-                            await self._persistence.on_exit(_trade_rec, self.broker._cash)
+                        _strat.apply_fill(_sym, _side, _qty, _entry_price)
+                        logger.info(f"[Live Runner] Runtime Sync: Discovered active Dhan position for {_sym} ({_side} {_qty} @ Rs.{_entry_price:.2f} | SL: Rs.{_sl:.2f}, TP: Rs.{_tp:.2f}). Synced into strategy memory.")
+
+                elif _strat.active_trade is not None:
+                    # If this strategy has an active trade in memory but is NOT open in Dhan, it was manually closed!
+                    logger.info(f"[Live Runner] Runtime Sync: position for {_sym} was manually closed on Dhan. Releasing in-memory state.")
+                    
+                    # 1. Update strat.positions to netQty 0
+                    _side_entry = _strat.active_trade["side"]
+                    _exit_side = "SELL" if _side_entry == "BUY" else "BUY"
+                    _qty = _strat.active_trade["qty"]
+                    _entry_price = _strat.active_trade["entry_price"]
+                    
+                    # Fetch last close or use entry price
+                    _exit_price = self.last_ohlc.get(_sym, {}).get("close") or _entry_price
+                    
+                    # Apply fill to close
+                    _strat.apply_fill(_sym, _exit_side, _qty, _exit_price)
+                    
+                    # 2. Add trade to history
+                    _realized = (_exit_price - _entry_price) * _qty if _side_entry == "BUY" else (_entry_price - _exit_price) * _qty
+                    _now_ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).replace(tzinfo=None)
+                    _trade_rec = {
+                        "Trade_ID": len(_strat.trade_history) + 1,
+                        "Symbol": _sym,
+                        "Direction": "LONG" if _side_entry == "BUY" else "SHORT",
+                        "Setup": _strat.active_trade.get("setup", "ORB"),
+                        "Entry_Time": _strat.active_trade.get("entry_time", _now_ist).isoformat() if hasattr(_strat.active_trade.get("entry_time"), "isoformat") else str(_strat.active_trade.get("entry_time")),
+                        "Entry_Price": _entry_price,
+                        "Qty": _qty,
+                        "Exit_Time": _now_ist.isoformat(),
+                        "Exit_Price": _exit_price,
+                        "Gross_PnL": _realized,
+                        "Fees": _strat.active_trade.get("entry_fees", 0.0),
+                        "Net_PnL": _realized - _strat.active_trade.get("entry_fees", 0.0),
+                        "Exit_Reason": "Manual Exit (Dhan Sync)",
+                        "Hold_Time_Mins": int((_now_ist - _strat.active_trade.get("entry_time", _now_ist)).total_seconds() / 60.0) if hasattr(_strat.active_trade.get("entry_time"), "timestamp") else 0,
+                        "Entry_Candle_Volume": 0,
+                        "Prev_Candle_Direction": "N/A",
+                        "Trade_Trend": "N/A",
+                        "Trade_Type": "ORB"
+                    }
+                    _strat.trade_history.append(_trade_rec)
+                    _strat.total_realized_pnl += _trade_rec["Net_PnL"]
+                    
+                    # 3. Clean up strategy variables
+                    _strat.active_trade = None
+                    _strat.pending_entry = None
+                    
+                    # Clear persisted JSON file if it is for this symbol
+                    _state_file = "storage/real_active_trade.json"
+                    if os.path.exists(_state_file):
+                        try:
+                            with open(_state_file, "r") as _f:
+                                _saved_state = json.load(_f)
+                            if _saved_state.get("symbol") == _sym:
+                                os.remove(_state_file)
+                        except Exception:
+                            pass
+                            
+                    # Save closed trade to DB
+                    if self._persistence:
+                        await self._persistence.on_exit(_trade_rec, self.broker._cash)
 
             # Trigger UI broadcast
             self.broadcast_update()
@@ -899,13 +940,9 @@ class LiveTradingRunner:
                 await asyncio.sleep(5)
                 now = datetime.now().timestamp()
                 
-                # Periodically sync positions from Dhan in REAL mode to catch manual exits
+                # Periodically sync positions from Dhan in REAL mode to catch manual exits and sync open trades
                 if self.broker_mode == "REAL" and self.broker and hasattr(self.broker, "_send_request"):
-                    # Check every 15 seconds (every 3 iterations of 5s watchdog)
-                    self._sync_counter = getattr(self, "_sync_counter", 0) + 1
-                    if self._sync_counter >= 3:
-                        self._sync_counter = 0
-                        asyncio.create_task(self._sync_live_positions_runtime())
+                    asyncio.create_task(self._sync_live_positions_runtime())
 
                 
                 # Check for regular NSE market hours (9:15 to 15:30) in IST
