@@ -516,17 +516,11 @@ class ORBStrategy(BaseStrategy):
         if symbol != self.symbol:
             return
 
-        # 1. Entry Order Fill — accept if pending_entry exists OR if active_trade is None
-        #    (pending_entry may have been cleared by the watchdog before fill arrives)
-        is_entry_fill = (self.active_trade is None) and (
-            self.pending_entry is not None or self.trade_taken_today
-        )
-        if is_entry_fill:
-            # Use pending_entry fields if available, otherwise use safe fallbacks
-            pe = self.pending_entry or {}
-            setup_name = pe.get("setup", "ORB Breakout")
-            orb_high = pe.get("orb_high", self.curr_day_high)
-            orb_low = pe.get("orb_low", self.curr_day_low)
+        # 1. Entry Order Fill
+        if self.active_trade is None and self.pending_entry is not None:
+            setup_name = self.pending_entry["setup"]
+            orb_high = self.pending_entry["orb_high"]
+            orb_low = self.pending_entry["orb_low"]
 
             # Calculate Stop Loss and Take Profit based on configured percentages
             if side == "BUY":
@@ -547,7 +541,7 @@ class ORBStrategy(BaseStrategy):
                 "side": side,
                 "qty": qty,
                 "entry_price": price,
-                "entry_time": self.timestamps[-1] if self.timestamps else datetime.now(),
+                "entry_time": self.timestamps[-1],
                 "setup": setup_name,
                 "initial_risk": initial_risk,
                 "stop_loss": stop_loss,
@@ -555,10 +549,10 @@ class ORBStrategy(BaseStrategy):
                 "max_price": price,
                 "min_price": price,
                 "entry_fees": 0.0,
-                "trigger_volume": pe.get("trigger_volume", 0),
-                "prev_candle_dir": pe.get("prev_candle_dir", "UNKNOWN"),
-                "trade_trend": pe.get("trade_trend", "UNKNOWN"),
-                "trade_type": pe.get("trade_type", "ORB_BREAKOUT")
+                "trigger_volume": self.pending_entry["trigger_volume"],
+                "prev_candle_dir": self.pending_entry["prev_candle_dir"],
+                "trade_trend": self.pending_entry["trade_trend"],
+                "trade_type": self.pending_entry["trade_type"]
             }
 
             # Retrieve commission
@@ -659,12 +653,6 @@ class ORBStrategy(BaseStrategy):
                     asyncio.create_task(
                         self._persistence.on_exit(trade_record, cash)
                     )
-                    # Mark cache dirty so next WS broadcast reloads from DB
-                    try:
-                        from core.live_runner import live_runner
-                        live_runner._trade_history_dirty = True
-                    except Exception:
-                        pass
                 except Exception as _pe:
                     dhan_logger.warning(f"[ORB] Persistence on_exit skipped: {_pe}")
 

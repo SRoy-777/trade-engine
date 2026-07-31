@@ -133,22 +133,17 @@ class WebSocketBroadcaster:
                 "total_fees_paid_inr": 0.0
             }
 
-        # Compile all completed historical trades — use live_runner cache to avoid DuckDB on every pulse
+        # Compile all completed historical trades from the DuckDB database when stopped
         all_trades = []
         if live_runner._persistence:
             try:
-                if live_runner._trade_history_dirty:
-                    history_dict = live_runner._persistence.load_trade_history()
-                    fresh = []
-                    for list_trades in history_dict.values():
-                        for t in list_trades:
-                            t_copy = dict(t)
-                            t_copy["Capital_Utilized"] = (t["Qty"] * t["Entry_Price"]) / live_runner.leverage
-                            t_copy["Leverage"] = live_runner.leverage
-                            fresh.append(t_copy)
-                    live_runner._trade_history_cache = fresh
-                    live_runner._trade_history_dirty = False
-                all_trades = list(live_runner._trade_history_cache)
+                history_dict = live_runner._persistence.load_trade_history()
+                for list_trades in history_dict.values():
+                    for t in list_trades:
+                        t_copy = dict(t)
+                        t_copy["Capital_Utilized"] = (t["Qty"] * t["Entry_Price"]) / live_runner.leverage
+                        t_copy["Leverage"] = live_runner.leverage
+                        all_trades.append(t_copy)
                 all_trades.sort(key=lambda x: x.get("Entry_Time", ""), reverse=True)
             except Exception as e:
                 logger.error(f"[WS Broadcaster] Failed to load trade history when stopped: {e}")
