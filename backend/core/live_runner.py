@@ -369,30 +369,50 @@ class LiveTradingRunner:
                         # Use saved SL/TP if this is the same symbol
                         _sl, _tp, _risk = 0.0, 0.0, 0.0
                         _restored_full = False
+                        _entry_time = datetime.now()
+                        _setup = "Restored"
+                        _trigger_volume = 0
+                        _prev_candle_dir = "N/A"
+                        _trade_trend = "N/A"
+                        _trade_type = "N/A"
+                        _entry_fees = 0.0
+
                         if _saved_state and _saved_state.get("symbol") == _sym:
                             _t = _saved_state.get("trade", {})
                             _sl = float(_t.get("stop_loss", 0.0))
                             _tp = float(_t.get("take_profit", 0.0))
                             _risk = float(_t.get("initial_risk", 0.0))
                             _restored_full = _sl > 0 and _tp > 0
-                            logger.info(f"[Live Runner] Restored full SL/TP for {_sym}: SL={_sl}, TP={_tp}")
+                            _setup = _t.get("setup", "Restored")
+                            _trigger_volume = _t.get("trigger_volume", 0)
+                            _prev_candle_dir = _t.get("prev_candle_dir", "N/A")
+                            _trade_trend = _t.get("trade_trend", "N/A")
+                            _trade_type = _t.get("trade_type", "N/A")
+                            _entry_fees = float(_t.get("entry_fees", 0.0))
+                            if "entry_time" in _t:
+                                try:
+                                    _entry_time = datetime.fromisoformat(_t["entry_time"])
+                                except Exception:
+                                    pass
+                            logger.info(f"[Live Runner] Restored full trade state for {_sym}: SL={_sl}, TP={_tp}, Entry Time={_entry_time}")
 
                         strat.active_trade = {
                             "side": _side,
                             "qty": _abs_qty,
                             "entry_price": _avg,
+                            "entry_time": _entry_time,
                             "stop_loss": _sl,
                             "take_profit": _tp,
                             "initial_risk": _risk,
                             "max_price": _avg,
                             "min_price": _avg,
                             "exit_order_pending": False,
-                            "setup": "Restored",
-                            "trigger_volume": 0,
-                            "prev_candle_dir": "N/A",
-                            "trade_trend": "N/A",
-                            "trade_type": "N/A",
-                            "entry_fees": 0.0,
+                            "setup": _setup,
+                            "trigger_volume": _trigger_volume,
+                            "prev_candle_dir": _prev_candle_dir,
+                            "trade_trend": _trade_trend,
+                            "trade_type": _trade_type,
+                            "entry_fees": _entry_fees,
                             "restored_on_restart": not _restored_full  # Only skip SL/TP if we don't have valid levels
                         }
                         strat.trade_taken_today = True
