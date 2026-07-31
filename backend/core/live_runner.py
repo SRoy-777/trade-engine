@@ -98,6 +98,9 @@ class LiveTradingRunner:
         
         self.active = False
         self._prev_connection_ok = True
+        # Trade history cache: avoids hitting DuckDB on every 100ms WS broadcast
+        self._trade_history_cache: list = []
+        self._trade_history_dirty: bool = True  # True = reload from DB on next compile
         self._ui_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         
         # Watchdog connection checks — ensure enable_live_stocks always exists (may have been set above from yaml)
@@ -886,6 +889,7 @@ class LiveTradingRunner:
                         # Save closed trade to DB
                         if self._persistence:
                             await self._persistence.on_exit(_trade_rec, self.broker._cash)
+                            self._trade_history_dirty = True  # Cache invalidated — reload on next WS pulse
 
             # Trigger UI broadcast
             self.broadcast_update()
@@ -983,20 +987,26 @@ class LiveTradingRunner:
                             "capital_utilized": (abs(pos["qty"]) * pos["avg_price"]) / self.leverage
                         }
 
-        # 2. Compile and sort trade history details
+        # 2. Compile and sort trade history details (cached — only reloads from DB when dirty)
         all_trades = []
-        if self._persistence:
+        if self._persistence and self._trade_history_dirty:
             try:
                 history_dict = self._persistence.load_trade_history()
+                fresh = []
                 for list_trades in history_dict.values():
                     for t in list_trades:
                         t_copy = dict(t)
                         t_copy["Capital_Utilized"] = (t["Qty"] * t["Entry_Price"]) / self.leverage
                         t_copy["Leverage"] = self.leverage
-                        all_trades.append(t_copy)
+                        fresh.append(t_copy)
+                self._trade_history_cache = fresh
+                self._trade_history_dirty = False
+                logger.info(f"[Live Runner] Trade history cache refreshed: {len(fresh)} record(s).")
             except Exception as p_err:
                 logger.error(f"[Live Runner] Failed to load trade history from database: {p_err}")
         
+        all_trades = list(self._trade_history_cache)
+
         # Fallback to in-memory active strategy trade logs if database didn't load any
         if not all_trades and self.strategies:
             for sym, strat in self.strategies.items():
