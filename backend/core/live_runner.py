@@ -199,7 +199,7 @@ class LiveTradingRunner:
 
         # 2. Initialize live or paper broker and risk components
         if self.broker_mode == "REAL":
-            self.broker = DhanLiveBroker(symbol_mappings=mappings)
+            self.broker = DhanLiveBroker(symbol_mappings=mappings, initial_cash=self.capital)
         else:
             self.broker = PaperBroker(initial_cash_inr=self.capital, latency_ms=50.0)
         risk = RiskController(

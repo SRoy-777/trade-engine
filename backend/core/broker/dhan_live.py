@@ -15,17 +15,13 @@ class DhanLiveBroker(BaseBroker):
     Communicates with exchange for real-world order routing and account status.
     """
 
-    def __init__(self, symbol_mappings: Dict[str, str]):
+    def __init__(self, symbol_mappings: Dict[str, str], initial_cash: float = 0.0):
         self.symbol_mappings = symbol_mappings
         self.client_id = os.getenv("CLIENT_ID", "").strip()
         self.access_token = os.getenv("ACCESS_TOKEN", "").strip()
         self.api_url = "https://api.dhan.co"
 
         # Optional static-IP proxy for Dhan API calls.
-        # Set DHAN_PROXY_URL in HF Space secrets to route all Dhan REST calls through
-        # a fixed IP (e.g. Webshare.io proxy) so the IP can be whitelisted in Dhan portal.
-        # Format: http://username:password@proxy_host:port
-        # If not set, direct connection is used (requires HF Space IP to be whitelisted).
         self._proxy_url = os.getenv("DHAN_PROXY_URL", "").strip() or None
         if self._proxy_url:
             dhan_logger.info("[Dhan Live Broker] Static-IP proxy configured — all Dhan API calls will route through proxy")
@@ -33,7 +29,7 @@ class DhanLiveBroker(BaseBroker):
             dhan_logger.warning("[Dhan Live Broker] No DHAN_PROXY_URL set — using direct connection (HF IP must be whitelisted in Dhan)")
 
         # Local state mirroring for StrategyManager compatibility
-        self._cash = 0.0
+        self._cash = initial_cash
         self._positions: Dict[str, Dict[str, float]] = {}
         self._fill_callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
         self._order_history: Dict[str, Dict[str, Any]] = {}
@@ -76,8 +72,9 @@ class DhanLiveBroker(BaseBroker):
         symbol = order_request["symbol"]
         side = order_request["side"].upper()
         qty = int(order_request.get("qty") or order_request.get("quantity", 0))
-        order_type = order_request.get("order_type", "MARKET").upper()
-        price = float(order_request.get("price") or 0.0)
+        # Force MARKET order for mandatory instant execution on exchange
+        order_type = "MARKET"
+        price = 0.0
         strategy_id = order_request.get("strategy_id", "orb")
 
         # Resolve symbol to security token ID
@@ -93,11 +90,11 @@ class DhanLiveBroker(BaseBroker):
             "transactionType": "BUY" if side == "BUY" else "SELL",
             "exchangeSegment": "NSE_EQ",
             "productType": "INTRADAY",
-            "orderType": order_type,
+            "orderType": "MARKET",
             "validity": "DAY",
             "securityId": sec_id,
             "quantity": qty,
-            "price": price if order_type == "LIMIT" else 0.0
+            "price": 0.0
         }
 
         dhan_logger.info(f"[Dhan Live Broker] Routing {side} order for {qty} {symbol} (Token: {sec_id}) to exchange...")
@@ -222,8 +219,10 @@ class DhanLiveBroker(BaseBroker):
         if now - self._last_balance_check > 10.0:
             self._last_balance_check = now
             response = self._send_request("GET", "/v2/fundlimit")
-            if "availabelBalance" in response:
-                self._cash = float(response["availabelBalance"])
+            if isinstance(response, dict):
+                bal = response.get("availabelBalance") or response.get("availableBalance") or response.get("sodLimit")
+                if bal is not None:
+                    self._cash = float(bal)
 
         available_balance = self._cash
 
