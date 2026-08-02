@@ -82,10 +82,24 @@ class ORBStrategy(BaseStrategy):
         self.blocked_by_range_count = 0
         self.blocked_by_wick_count = 0
 
-        # Parse times
-        self.square_off_time = datetime.strptime(self.square_off_str, "%H:%M").time()
-        self.entry_start_time = datetime.strptime(self.entry_start_str, "%H:%M").time()
-        self.entry_end_time = datetime.strptime(self.entry_end_str, "%H:%M").time()
+        # Parse times safely
+        try:
+            self.square_off_time = datetime.strptime(str(self.square_off_str).replace(".", ":"), "%H:%M").time()
+        except ValueError:
+            dhan_logger.warning(f"[ORB] Invalid square_off format '{self.square_off_str}', defaulting to 15:15")
+            self.square_off_time = datetime.strptime("15:15", "%H:%M").time()
+
+        try:
+            self.entry_start_time = datetime.strptime(str(self.entry_start_str).replace(".", ":"), "%H:%M").time()
+        except ValueError:
+            dhan_logger.warning(f"[ORB] Invalid entry_start format '{self.entry_start_str}', defaulting to 09:30")
+            self.entry_start_time = datetime.strptime("09:30", "%H:%M").time()
+
+        try:
+            self.entry_end_time = datetime.strptime(str(self.entry_end_str).replace(".", ":"), "%H:%M").time()
+        except ValueError:
+            dhan_logger.warning(f"[ORB] Invalid entry_end format '{self.entry_end_str}', defaulting to 11:00")
+            self.entry_end_time = datetime.strptime("11:00", "%H:%M").time()
 
         # Historical data list
         self.opens: List[float] = []
@@ -578,7 +592,7 @@ class ORBStrategy(BaseStrategy):
             self.apply_fill(symbol, side, qty, price)
 
             # Save full trade state (with SL/TP) to disk for restart recovery
-            _save_real_trade_state(self.symbol, self.active_trade)
+            _save_real_trade_state(symbol, self.active_trade)
 
             # Persist open position to DuckDB + R2 (background, does not block trade)
             if self._persistence is not None:
@@ -586,7 +600,7 @@ class ORBStrategy(BaseStrategy):
                     cash = self.manager.broker._cash if self.manager else 0.0
                     import asyncio
                     asyncio.create_task(
-                        self._persistence.on_entry(self.symbol, self.active_trade, cash)
+                        self._persistence.on_entry(symbol, self.active_trade, cash)
                     )
                 except Exception as _pe:
                     dhan_logger.warning(f"[ORB] Persistence on_entry skipped: {_pe}")
@@ -616,7 +630,7 @@ class ORBStrategy(BaseStrategy):
 
             trade_record = {
                 "Trade_ID": len(self.trade_history) + 1,
-                "Symbol": self.symbol,
+                "Symbol": symbol,
                 "Direction": "LONG" if side_entry == "BUY" else "SHORT",
                 "Setup": trade["setup"],
                 "Entry_Time": trade["entry_time"].isoformat(),
