@@ -8,7 +8,7 @@ volume_filter_multiplier: 2.0
 volume_sma_len: 10
 take_profit_pct: 1.50
 stop_loss_pct: 1.00
-square_off: "15:15"
+square_off: "15:00"
 entry_start: "09:30"
 entry_end: "10:30"
 enable_trailing_sl: false
