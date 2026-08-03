@@ -836,12 +836,16 @@ class LiveTradingRunner:
             if not isinstance(_positions_data, list):
                 return
 
-            # Open positions map from Dhan
+            # Open and closed positions map from Dhan
             _open_positions_map = {}
+            _closed_positions_map = {}
             for _pos in _positions_data:
-                if isinstance(_pos, dict) and int(_pos.get("netQty", 0)) != 0:
+                if isinstance(_pos, dict):
                     _sym = _pos.get("tradingSymbol", "").strip().upper().replace("-EQ", "")
-                    _open_positions_map[_sym] = _pos
+                    if int(_pos.get("netQty", 0)) != 0:
+                        _open_positions_map[_sym] = _pos
+                    elif int(_pos.get("dayBuyQty", 0)) > 0 or int(_pos.get("daySellQty", 0)) > 0:
+                        _closed_positions_map[_sym] = _pos
 
             # Sync in-memory strategy states with Dhan positions
             for _sym, _strat in self.strategies.items():
@@ -885,6 +889,8 @@ class LiveTradingRunner:
                             "trade_type": "ORB_BREAKOUT"
                         }
                         _strat.apply_fill(_sym, _side, _qty, _entry_price)
+                        if self.broker and hasattr(self.broker, "_positions"):
+                            self.broker._positions[_sym] = {"qty": float(_qty if _side == "BUY" else -_qty), "avg_price": float(_entry_price)}
                         logger.info(f"[Live Runner] Runtime Sync: Discovered active Dhan position for {_sym} ({_side} {_qty} @ Rs.{_entry_price:.2f} | SL: Rs.{_sl:.2f}, TP: Rs.{_tp:.2f}). Synced into strategy memory.")
 
                 elif _strat.active_trade is not None:
@@ -897,15 +903,34 @@ class LiveTradingRunner:
                     _qty = _strat.active_trade["qty"]
                     _entry_price = _strat.active_trade["entry_price"]
                     
-                    # Fetch last close or use entry price
-                    _exit_price = self.last_ohlc.get(_sym, {}).get("close") or _entry_price
+                    # Fetch realized profit & exit price directly from Dhan position object
+                    _dhan_closed = _closed_positions_map.get(_sym, {})
+                    _realized = float(_dhan_closed.get("realizedProfit", 0.0))
+                    
+                    if _side_entry == "BUY":
+                        _exit_price = float(_dhan_closed.get("sellAvg", 0.0))
+                    else:
+                        _exit_price = float(_dhan_closed.get("buyAvg", 0.0))
+
+                    if _exit_price <= 0:
+                        _exit_price = self.last_ohlc.get(_sym, {}).get("close") or _entry_price
+
+                    if _realized == 0.0 and _exit_price != _entry_price:
+                        _realized = (_exit_price - _entry_price) * _qty if _side_entry == "BUY" else (_entry_price - _exit_price) * _qty
                     
                     # Apply fill to close
                     _strat.apply_fill(_sym, _exit_side, _qty, _exit_price)
+                    if self.broker and hasattr(self.broker, "_positions"):
+                        self.broker._positions.pop(_sym, None)
                     
-                    # 2. Add trade to history
-                    _realized = (_exit_price - _entry_price) * _qty if _side_entry == "BUY" else (_entry_price - _exit_price) * _qty
+                    # 2. Add trade to history (Dhan ground truth for P/L)
                     _now_ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).replace(tzinfo=None)
+                    _fees = 0.0
+                    if self.broker and hasattr(self.broker, "_calculate_transaction_charges"):
+                        _fees = self.broker._calculate_transaction_charges(_side_entry, _entry_price * _qty) + self.broker._calculate_transaction_charges(_exit_side, _exit_price * _qty)
+                    else:
+                        _fees = _strat.active_trade.get("entry_fees", 0.0)
+
                     _trade_rec = {
                         "Trade_ID": len(_strat.trade_history) + 1,
                         "Symbol": _sym,
@@ -917,8 +942,8 @@ class LiveTradingRunner:
                         "Exit_Time": _now_ist.isoformat(),
                         "Exit_Price": _exit_price,
                         "Gross_PnL": _realized,
-                        "Fees": _strat.active_trade.get("entry_fees", 0.0),
-                        "Net_PnL": _realized - _strat.active_trade.get("entry_fees", 0.0),
+                        "Fees": _fees,
+                        "Net_PnL": _realized - _fees,
                         "Exit_Reason": "Manual Exit (Dhan Sync)",
                         "Hold_Time_Mins": int((_now_ist - _strat.active_trade.get("entry_time", _now_ist)).total_seconds() / 60.0) if hasattr(_strat.active_trade.get("entry_time"), "timestamp") else 0,
                         "Entry_Candle_Volume": 0,

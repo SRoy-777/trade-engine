@@ -126,10 +126,18 @@ class StrategyManager:
             # Determine if this is an opening position order (reductions/exits are always allowed)
             current_pos_qty = portfolio.get("positions", {}).get(symbol, {}).get("qty", 0.0)
             is_opening = True
-            if side == "SELL" and current_pos_qty > 0:
-                is_opening = False
-            elif side == "BUY" and current_pos_qty < 0:
-                is_opening = False
+
+            # Check strategy active trade directly to guarantee exits are never misclassified
+            if strategy and strategy.active_trade:
+                active_side = str(strategy.active_trade.get("side", "")).upper()
+                if (side == "SELL" and active_side == "BUY") or (side == "BUY" and active_side == "SELL"):
+                    is_opening = False
+
+            if is_opening:
+                if side == "SELL" and current_pos_qty > 0:
+                    is_opening = False
+                elif side == "BUY" and current_pos_qty < 0:
+                    is_opening = False
 
             if is_opening:
                 # 1. Verify dynamic capital allocation limit
