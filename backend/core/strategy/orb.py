@@ -510,6 +510,22 @@ class ORBStrategy(BaseStrategy):
         side = "SELL" if trade["side"] == "BUY" else "BUY"
         qty = trade["qty"]
 
+        # Resolve exact live position quantity from Dhan API in REAL mode
+        if self.manager and getattr(self.manager, "broker", None) and hasattr(self.manager.broker, "_send_request"):
+            try:
+                live_positions = self.manager.broker._send_request("GET", "/v2/positions")
+                if isinstance(live_positions, list):
+                    for pos in live_positions:
+                        pos_sym = pos.get("tradingSymbol", "").strip().upper().replace("-EQ", "")
+                        if pos_sym == self.symbol and int(pos.get("netQty", 0)) != 0:
+                            live_net = int(pos.get("netQty", 0))
+                            side = "SELL" if live_net > 0 else "BUY"
+                            qty = abs(live_net)
+                            trade["qty"] = qty  # Update active_trade qty to match Dhan exact open position
+                            break
+            except Exception as ex:
+                dhan_logger.warning(f"[ORB] Could not fetch live position qty for {self.symbol}: {ex}")
+
         trade["exit_order_pending"] = True
         trade["exit_reason"] = reason
         trade["exit_trigger_time"] = packet.timestamp
