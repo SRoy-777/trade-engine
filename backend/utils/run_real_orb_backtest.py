@@ -230,7 +230,7 @@ async def run_simulation():
             exchange_segment="NSE_EQ",
             security_id=symbol,
             ltp=float(r["close"]),
-            volume=int(r["volume"]),
+            volume=int(float(r["volume"])),
             timestamp=ts,
             open=float(r["open"]),
             high=float(r["high"]),
