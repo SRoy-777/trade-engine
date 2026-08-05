@@ -41,3 +41,12 @@ market_data/
 !market_data/*_security_ids.csv
 !market_data/orb/choosed_stocks.xlsx
 
+# Agent Customizations
+.agents/
+*.xlsx
+
+# Scratch & Temporary Audit Scripts
+backend/scratch_*
+backend/test_*
+backend/audit_*
+backend/read_audit.py

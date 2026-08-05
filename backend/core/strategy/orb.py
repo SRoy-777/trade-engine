@@ -126,6 +126,19 @@ class ORBStrategy(BaseStrategy):
         # If None, all persistence hooks are silently skipped (safe for backtests)
         self._persistence = None
 
+    def warmup_history(self, candles: List[MarketPacket]) -> None:
+        """Pre-populates historical candles (e.g. from intraday chart history) before live trading begins."""
+        for p in candles:
+            if (p.open is not None and p.close is not None and 
+                p.high is not None and p.low is not None and 
+                p.volume is not None and p.timestamp is not None):
+                self.opens.append(p.open)
+                self.closes.append(p.close)
+                self.highs.append(p.high)
+                self.lows.append(p.low)
+                self.timestamps.append(p.timestamp)
+                self.volumes.append(p.volume)
+
     async def on_tick(self, packet: MarketPacket) -> None:
         """Processes each 5-minute OHLC tick."""
         if packet.security_id != self.symbol:
@@ -390,8 +403,8 @@ class ORBStrategy(BaseStrategy):
                         return
 
             # 3. Nifty Trend filter check
-            if self.enable_nifty_filter and self.manager and hasattr(self.manager, "indices"):
-                nifty = self.manager.indices.get("NIFTY_50")
+            if self.enable_nifty_filter:
+                nifty = self.manager.indices.get("NIFTY_50") if (self.manager and hasattr(self.manager, "indices")) else None
                 if nifty and nifty.get("ltp", 0.0) > 0.0 and nifty.get("open", 0.0) > 0.0:
                     nifty_bullish = nifty["ltp"] >= nifty["open"]
                     if long_breakout and not nifty_bullish:
@@ -406,6 +419,12 @@ class ORBStrategy(BaseStrategy):
                         )
                         self.blocked_by_nifty_count += 1
                         return
+                else:
+                    dhan_logger.warning(
+                        f"[ORB] Entry Blocked for {self.symbol}: Nifty 50 index feed not ready (ltp/open unavailable)"
+                    )
+                    self.blocked_by_nifty_count += 1
+                    return
 
             side = "BUY" if long_breakout else "SELL"
             self.trade_taken_today = True

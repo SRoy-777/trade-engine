@@ -1,14 +1,14 @@
 enable_live_stocks: true
 symbols: "market_data/orb/choosed_stocks.xlsx" # Excel file containing the stocks to load
 timeframe: 5m
-capital: 60000
+capital: 10000
 leverage: 5
 opening_range_mins: 15
 volume_filter_multiplier: 2.0
 volume_sma_len: 10
 take_profit_pct: 1.50
 stop_loss_pct: 1.00
-square_off: "15:15"
+square_off: "15:00"
 entry_start: "09:30"
 entry_end: "10:30"
 enable_trailing_sl: false
@@ -18,8 +18,8 @@ max_opening_range_pct: 0.00  # Max opening range width as a percent of price (e.
 enable_nifty_filter: true  # Only take trades aligned with Nifty 50 trend (LTP >= Open).
 max_breakout_wick_pct: 0.00  # Max breakout candle wick size in breakout direction (e.g. 0.30 for 30%). 0.0 to disable.
 output_dir: "market_data/real_orb"
-start_date: "2023-04-01"
-end_date: "2026-06-30"
+start_date: "2025-04-01"
+end_date: "2026-03-31"
 
 # Allocation settings
 allocation_strategy: "SINGLE_STOCK" # SINGLE_STOCK or PERCENTAGE_RANKED
